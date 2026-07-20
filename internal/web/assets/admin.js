@@ -161,10 +161,16 @@
       r.hidden = !ok;
       if (ok) shown++;
     });
-    // hide a folder group whose rows are all filtered out
+    // hide a folder group whose rows are all filtered out, and open any
+    // collapsed stream that has a match so filtering can find notes
     groups.forEach(function (g) {
       var anyVisible = g.querySelector("tr.page-row:not([hidden])") !== null;
       g.querySelector("tr.folder-row").hidden = !anyVisible;
+      if (g.classList.contains("stream")) {
+        g.classList.toggle("revealed", q !== "" && anyVisible);
+        var btn = g.querySelector("button.reveal");
+        if (btn) btn.textContent = g.classList.contains("revealed") ? "hide entries" : "show entries";
+      }
     });
     if (q) {
       count.hidden = false;
@@ -291,4 +297,18 @@
   if (path) path.addEventListener("input", paint);
   window.addEventListener("resize", sync);
   paint();
+})();
+
+
+// stream folders keep their notes collapsed; this reveals them on demand
+(function () {
+  var buttons = document.querySelectorAll("tr.folder-row button.reveal");
+  if (!buttons.length) return;
+  buttons.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var group = btn.closest("tbody");
+      var shown = group.classList.toggle("revealed");
+      btn.textContent = shown ? "hide entries" : "show entries";
+    });
+  });
 })();

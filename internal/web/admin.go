@@ -52,7 +52,6 @@ func adminNav() string {
 <a class="btn quiet" href="/admin/edit?path=&new=1">+ page</a>
 <a class="btn quiet" href="/admin/now">+ note</a>
 <a class="btn quiet" href="/admin/upload">upload</a>
-<a class="btn quiet" href="/admin/now">now</a>
 <a class="btn quiet" href="/admin/stats">stats</a>
 <a class="btn quiet" href="/admin/manual">manual</a>
 <a class="btn quiet" href="/">view site</a>

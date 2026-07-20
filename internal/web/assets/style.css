@@ -428,6 +428,7 @@ form.del button.linkish:hover, button.linkish:hover { text-decoration: underline
 /* folder row actions read as quiet text, not controls (must out-specify
    the generic .linkish rule above, which paints them accent-coloured) */
 tr.folder-row form.feedtoggle button.linkish,
+tr.folder-row button.reveal,
 tr.folder-row a.newpost {
   font-weight: 400;
   font-size: 0.85em;
@@ -435,6 +436,7 @@ tr.folder-row a.newpost {
   text-decoration: none;
 }
 tr.folder-row form.feedtoggle button.linkish:hover,
+tr.folder-row button.reveal:hover,
 tr.folder-row a.newpost:hover { color: var(--accent); text-decoration: underline; }
 
 a.newpost { font-weight: 400; font-size: 0.9em; margin-left: 0.6em; }
@@ -519,5 +521,11 @@ a.newpost { font-weight: 400; font-size: 0.9em; margin-left: 0.6em; }
 }
 
 /* row actions right-align so history/delete line up whether or not the row
-   also has a view link */
+   also has a view link. A folder header is a single full-width cell, so it
+   must stay left or the folder name drifts to the far edge. */
 table.admin td:last-child, table.admin th:last-child { text-align: right; }
+table.admin tr.folder-row td { text-align: left; }
+
+/* a stream's entries are notes, not documents: collapsed until asked for */
+tbody.folder-group.stream tr.page-row { display: none; }
+tbody.folder-group.stream.revealed tr.page-row { display: table-row; }
