@@ -273,7 +273,6 @@ func (s *Server) mcpToolCall(params json.RawMessage) map[string]any {
 		if err != nil {
 			return toolErr(err.Error())
 		}
-		s.ensureStream(s.nowFolder())
 		return toolText("posted note " + pg.Path)
 
 	case "list_now":

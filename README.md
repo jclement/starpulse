@@ -93,8 +93,9 @@ starpulse version
 - **Full-text search** (SQLite FTS5) on the web, over gemini, and in the TUI.
 - **Per-door statistics**: which pages, and whether they were read over http,
   gemini, ssh, telnet or tor.
-- **Notes**: short entries — ordinary pages in a stream folder, so they get
-  history, search and feeds like everything else, without cluttering listings.
+- **Notes**: short entries. A note *is* a page — the only difference is that
+  the server names the file for you — so it gets history, search and feeds
+  like everything else.
 - **Syntax highlighting** for code blocks, rendered server-side.
 - **Automatic HTTPS**, and a **self-managed tor hidden service** forwarding
   every door you enable.
@@ -212,12 +213,12 @@ Outside a feed folder only the first two count, so ordinary pages stay undated
 and list alphabetically. Feeds are served over HTTP *and* gemini, and each is
 advertised in the HTML `<head>`.
 
-Add `hide_files: true` to a `.feed` and the folder becomes a **stream**: its
-pages are short notes rather than documents, so they stay out of `{{list}}`
-and collapse in the admin. That is all a "now" page is — a gemlog without the
-file details. `{{now}}` and the *+ note* button write into the folder named by
-`now_folder`, and posting one over titan is just uploading to the folder
-itself:
+There is no second kind of folder. A "now" page is just a folder whose files
+happen to be short and machine-named: *+ note* mints `2026-07-20-1423.gmi`
+where *+ page* would ask you for a name, and both work anywhere. `{{now}}` and
+the *+ note* button default to the folder named by `now_folder`. `index.gmi`
+and dot-files are never feed entries. Posting a note over titan is just
+uploading to a folder that publishes a feed:
 
 ```sh
 # in Lagrange: navigate to gemini://example.org/now/ and upload

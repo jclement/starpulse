@@ -361,7 +361,7 @@ func TestTitanDisabled(t *testing.T) {
 // upload becomes a new dated entry instead of overwriting an index.
 func TestTitanPostsNotesToStreamFolder(t *testing.T) {
 	ts := startServer(t)
-	marker := store.DefaultFeedMarker("Now", "Jeff", 30, true)
+	marker := store.DefaultFeedMarker("Now", "Jeff", 30)
 	_, _ = ts.st.SavePage("/now/"+store.FeedMarker, marker, "", "seed")
 
 	post := func(body string) string {

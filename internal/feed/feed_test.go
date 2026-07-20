@@ -84,7 +84,7 @@ func TestSiteWideFeedAndLimit(t *testing.T) {
 func TestNoteStreamFeed(t *testing.T) {
 	st := testStore(t)
 	_, _ = st.SavePage("/now/"+store.FeedMarker,
-		store.DefaultFeedMarker("Now", "Jeff", 30, true), "", "t")
+		store.DefaultFeedMarker("Now", "Jeff", 30), "", "t")
 	_, _ = st.SavePage(st.NewStreamPath("/now/", time.Date(2026, 7, 19, 9, 0, 0, 0, time.UTC)),
 		[]byte("first update"), "", "t")
 	_, _ = st.SavePage(st.NewStreamPath("/now/", time.Date(2026, 7, 20, 9, 0, 0, 0, time.UTC)),

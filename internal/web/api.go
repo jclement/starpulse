@@ -226,7 +226,6 @@ func (s *Server) apiNow(w http.ResponseWriter, r *http.Request) {
 			jsonErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		s.ensureStream(s.nowFolder())
 		jsonOut(w, http.StatusOK, map[string]any{"path": pg.Path, "content": string(pg.Content)})
 	case http.MethodDelete:
 		p := r.URL.Query().Get("path")

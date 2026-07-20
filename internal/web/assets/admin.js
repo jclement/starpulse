@@ -141,50 +141,67 @@
   });
 })();
 
-// admin page-list filter: live substring match on path/title, keeps folder
-// headers visible only when they have matches. Works fully client-side.
+// admin search: the folder browser shows one folder, so the filter has to
+// reach past it. It runs against an inline index of every page and swaps the
+// browser for a flat result list. With JS off the same input is a GET form
+// and the server renders the identical list.
 (function () {
   var input = document.getElementById("page-filter");
-  var table = document.getElementById("pages-table");
-  if (!input || !table) return;
+  var browse = document.getElementById("browse");
+  var out = document.getElementById("search-results");
+  var blob = document.getElementById("page-index");
+  if (!input || !browse || !out || !blob) return;
   var count = document.getElementById("filter-count");
-  var rows = Array.prototype.slice.call(table.querySelectorAll("tr.page-row"));
-  var groups = Array.prototype.slice.call(table.querySelectorAll("tbody.folder-group"));
+  var pages;
+  try { pages = JSON.parse(blob.textContent); } catch (e) { return; }
+  // the form would reload the page on Enter; we already have the answer
+  var form = input.form;
+  if (form) form.addEventListener("submit", function (e) { e.preventDefault(); });
+
+  function esc(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function row(p) {
+    var view = p.v ? '<a href="' + esc(p.v) + '">view</a> <span class="dim">·</span> ' : "";
+    return '<tr class="page-row"><td><a href="/admin/edit?path=' + encodeURIComponent(p.p) +
+      '" title="' + esc(p.t ? p.p + " — " + p.t : p.p) + '">' + esc(p.p) + "</a></td>" +
+      '<td class="dim num"></td><td class="acts dim">' + view + "</td></tr>";
+  }
 
   function apply() {
     var q = input.value.trim().toLowerCase();
-    var terms = q.split(/\s+/).filter(Boolean);
-    var shown = 0;
-    rows.forEach(function (r) {
-      var key = r.getAttribute("data-key");
-      var ok = terms.every(function (t) { return key.indexOf(t) !== -1; });
-      r.hidden = !ok;
-      if (ok) shown++;
-    });
-    // hide a folder group whose rows are all filtered out, and open any
-    // collapsed stream that has a match so filtering can find notes
-    groups.forEach(function (g) {
-      var anyVisible = g.querySelector("tr.page-row:not([hidden])") !== null;
-      g.querySelector("tr.folder-row").hidden = !anyVisible;
-      if (g.classList.contains("stream")) {
-        g.classList.toggle("revealed", q !== "" && anyVisible);
-        var btn = g.querySelector("button.reveal");
-        if (btn) btn.textContent = g.classList.contains("revealed") ? "hide entries" : "show entries";
-      }
-    });
-    if (q) {
-      count.hidden = false;
-      count.textContent = "showing " + shown + " of " + rows.length;
-    } else {
+    if (!q) {
+      out.hidden = true;
+      out.innerHTML = "";
+      browse.hidden = false;
       count.hidden = true;
+      return;
     }
+    var terms = q.split(/\s+/);
+    var hits = pages.filter(function (p) {
+      var key = (p.p + " " + (p.t || "")).toLowerCase();
+      return terms.every(function (t) { return key.indexOf(t) !== -1; });
+    });
+    out.innerHTML = '<table class="admin browse">' +
+      (hits.length ? hits.map(row).join("") : '<tr><td colspan="3" class="dim">nothing matches</td></tr>') +
+      "</table>";
+    out.hidden = false;
+    browse.hidden = true;
+    count.hidden = false;
+    count.textContent = hits.length + " of " + pages.length + " pages";
   }
   input.addEventListener("input", apply);
-  // '/' focuses the filter from anywhere on the page
+  if (input.value.trim()) apply();
+  // '/' focuses the search from anywhere on the page
   document.addEventListener("keydown", function (e) {
     if (e.key === "/" && document.activeElement !== input) {
       e.preventDefault();
       input.focus();
+    }
+    if (e.key === "Escape" && document.activeElement === input && input.value) {
+      input.value = "";
+      apply();
     }
   });
 })();
@@ -297,18 +314,4 @@
   if (path) path.addEventListener("input", paint);
   window.addEventListener("resize", sync);
   paint();
-})();
-
-
-// stream folders keep their notes collapsed; this reveals them on demand
-(function () {
-  var buttons = document.querySelectorAll("tr.folder-row button.reveal");
-  if (!buttons.length) return;
-  buttons.forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      var group = btn.closest("tbody");
-      var shown = group.classList.toggle("revealed");
-      btn.textContent = shown ? "hide entries" : "show entries";
-    });
-  });
 })();

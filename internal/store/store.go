@@ -272,10 +272,6 @@ type FeedSettings struct {
 	Subtitle string
 	Author   string
 	Limit    int
-	// HideFiles marks a stream: its pages are entries, not documents. They
-	// stay out of {{list}} and are collapsed in the admin, because nobody
-	// wants a wall of filenames for what are really just notes.
-	HideFiles bool
 }
 
 // ParseFeedMarker reads a .feed file: plain "key: value" lines, with # for
@@ -304,8 +300,6 @@ func ParseFeedMarker(content []byte) FeedSettings {
 			if n, err := strconv.Atoi(v); err == nil && n > 0 {
 				fs.Limit = n
 			}
-		case "hide_files":
-			fs.HideFiles = v == "true" || v == "yes" || v == "on"
 		}
 	}
 	return fs
@@ -325,20 +319,14 @@ func (s *Store) FeedInfo(folder string) FeedSettings {
 
 // DefaultFeedMarker renders a starting .feed file for a folder, prefilled
 // with the values in effect so they can simply be edited.
-func DefaultFeedMarker(title, author string, limit int, hideFiles bool) []byte {
+func DefaultFeedMarker(title, author string, limit int) []byte {
 	return []byte(fmt.Sprintf(`# Feed settings for this folder. Delete this file to stop publishing.
+# index.gmi and dot-files are never entries.
 title: %s
 subtitle:
 author: %s
 limit: %d
-# hide_files: a stream of short notes rather than a list of documents
-hide_files: %t
-`, title, author, limit, hideFiles))
-}
-
-// HidesFiles reports whether a folder is a stream (see FeedSettings).
-func (s *Store) HidesFiles(folder string) bool {
-	return s.FeedInfo(folder).HideFiles
+`, title, author, limit))
 }
 
 // StreamPages returns a folder's pages newest-first, for rendering a stream

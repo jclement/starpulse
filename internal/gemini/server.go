@@ -337,10 +337,10 @@ func titanTarget(st *store.Store, rawPath string) string {
 		rawPath = "/"
 	}
 	if rawPath == "/" || strings.HasSuffix(rawPath, "/") {
-		// uploading to a STREAM folder posts a new note, because that is the
-		// only sensible reading of "here is another short thing for /now/".
-		// Everywhere else a folder target means its index page.
-		if rawPath != "/" && st.HidesFiles(rawPath) {
+		// uploading to a folder that publishes a feed posts a new entry,
+		// because that is the only sensible reading of "here is another
+		// thing for /now/". Everywhere else a folder means its index page.
+		if rawPath != "/" && st.IsFeedFolder(rawPath) {
 			return st.NewStreamPath(rawPath, time.Now())
 		}
 		idx := strings.TrimSuffix(rawPath, "/") + "/index.gmi"

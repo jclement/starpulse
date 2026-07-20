@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -52,107 +51,13 @@ func adminNav() string {
 	return `<nav class="anav">
 <a href="/admin">pages</a>
 <a class="new" href="/admin/edit?path=&new=1">+ page</a>
-<a class="new" href="/admin/now">+ now</a>
+<a class="new" href="/admin/now">+ note</a>
 <a href="/admin/upload">upload</a>
 <a href="/admin/stats">stats</a>
 <a href="/admin/manual">manual</a>
 <a class="far" href="/">view site</a>
 <form class="inline" method="post" action="/logout"><button class="linkish" type="submit">logout</button></form>
 </nav>`
-}
-
-func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
-	metas, err := s.Store.ListAll()
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	var b strings.Builder
-	b.WriteString("<h1>Pages</h1>\n" + adminNav())
-	if msg := r.URL.Query().Get("msg"); msg != "" {
-		fmt.Fprintf(&b, `<p class="flash">%s</p>`+"\n", html.EscapeString(msg))
-	}
-	fmt.Fprintf(&b, `<input type="search" id="page-filter" class="filter" placeholder="filter %d pages by path or title…" autocomplete="off" autofocus>`+"\n", len(metas))
-	b.WriteString(`<p id="filter-count" class="dim" hidden></p>` + "\n")
-	b.WriteString(`<table class="admin" id="pages-table"><thead><tr><th>path</th><th class="right">size</th><th>updated</th><th></th></tr></thead>` + "\n")
-
-	// bucket by folder first — a flat path sort interleaves subfolder pages
-	// with root pages (/posts/… sorts between /now.gmi and /projects.gmi),
-	// which would split a folder into several groups.
-	feedFolders := s.Store.FeedFolders()
-	byFolder := map[string][]store.Meta{}
-	var folders []string
-	for _, m := range metas {
-		f := pageFolder(m.Path)
-		if _, seen := byFolder[f]; !seen {
-			folders = append(folders, f)
-		}
-		byFolder[f] = append(byFolder[f], m)
-	}
-	sort.Slice(folders, func(i, j int) bool {
-		if (folders[i] == "/") != (folders[j] == "/") {
-			return folders[i] == "/" // root first
-		}
-		return folders[i] < folders[j]
-	})
-
-	for _, folder := range folders {
-		rows := byFolder[folder]
-		label := folder
-		if label == "/" {
-			label = "/ (root)"
-		}
-		_, isFeed := feedFolders[folder]
-		stream := isFeed && s.Store.HidesFiles(folder)
-		actions := ""
-		if stream {
-			actions += fmt.Sprintf(` <span class="dim">·</span> <a class="newpost" href="/admin/now?folder=%s">new note</a>`,
-				url.QueryEscape(folder))
-		} else if isFeed {
-			actions += fmt.Sprintf(` <span class="dim">·</span> <a class="newpost" href="/admin/edit?new=1&amp;path=%s">new post</a>`,
-				url.QueryEscape(folder))
-		}
-		// every non-root folder can publish (or stop publishing) a feed
-		if folder != "/" {
-			label := "enable feed"
-			if isFeed {
-				label = "disable feed"
-			}
-			actions += fmt.Sprintf(
-				` <span class="dim">·</span> <form class="inline feedtoggle" method="post" action="/admin/feed">`+
-					`<input type="hidden" name="folder" value="%s">`+
-					`<input type="hidden" name="enable" value="%t">`+
-					`<button class="linkish" type="submit" title="Atom feed for this folder">%s</button></form>`,
-				html.EscapeString(folder), !isFeed, label)
-		}
-		cls := "folder-group"
-		if stream {
-			cls += " stream" // entries collapse; they are notes, not documents
-			actions += ` <span class="dim">·</span> <button type="button" class="linkish reveal">show entries</button>`
-		}
-		fmt.Fprintf(&b, `<tbody class="%s" data-folder="%s"><tr class="folder-row"><td colspan="4">%s <span class="dim">%d</span>%s</td></tr>`+"\n",
-			cls, html.EscapeString(strings.ToLower(folder)), html.EscapeString(label), len(rows), actions)
-		for _, m := range rows {
-			title := m.Title
-			view := ""
-			if !m.Binary && !store.Hidden(m.Path) && strings.HasSuffix(m.Path, ".gmi") {
-				view = fmt.Sprintf(`<a href="%s">view</a> · `, html.EscapeString(pageURL(m.Path)))
-			} else if m.Binary || !store.Hidden(m.Path) {
-				view = fmt.Sprintf(`<a href="%s">view</a> · `, html.EscapeString(m.Path))
-			}
-			// show just the file name in the folder view; full path on hover
-			name := m.Path[len(folder):]
-			fmt.Fprintf(&b, `<tr class="page-row" data-key="%s"><td><a href="/admin/edit?path=%s" title="%s">%s</a></td><td class="right dim">%s</td><td class="dim">%s</td><td class="dim">%s<a href="/admin/versions?path=%s">history</a> · <form class="inline del" method="post" action="/admin/delete"><input type="hidden" name="path" value="%s"><button class="linkish" type="submit" data-path="%s">delete</button></form></td></tr>`+"\n",
-				html.EscapeString(strings.ToLower(m.Path+" "+title)),
-				url.QueryEscape(m.Path), html.EscapeString(titleHint(m.Path, title)), html.EscapeString(name),
-				sizeStr(m.Size), m.Updated.In(s.loc()).Format("2006-01-02 15:04"), view, url.QueryEscape(m.Path),
-				html.EscapeString(m.Path), html.EscapeString(m.Path))
-		}
-		b.WriteString("</tbody>\n")
-	}
-	b.WriteString("</table>\n")
-	b.WriteString(`<p class="dim">Special files: <code>.header</code> and <code>.footer</code> (gemtext, inherited down folders), <code>.css</code> (CSS, inherited down folders). Create them like any page, e.g. <code>/posts/.header</code>.</p>`)
-	s.adminRender(w, r, "pages", b.String())
 }
 
 // titleHint is the hover tooltip for a row: the full path, plus the page
@@ -294,7 +199,7 @@ func (s *Server) adminEdit(w http.ResponseWriter, r *http.Request) {
 			if author == "" {
 				author = s.Cfg.Hostname
 			}
-			content = string(store.DefaultFeedMarker(strings.Trim(pageFolder(p), "/"), author, 30, false))
+			content = string(store.DefaultFeedMarker(strings.Trim(pageFolder(p), "/"), author, 30))
 		case strings.HasSuffix(p, ".css"):
 			content = defaultThemeCSS()
 		}
@@ -373,7 +278,8 @@ func (s *Server) adminDelete(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin?msg="+url.QueryEscape("delete failed: "+err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/admin?msg="+url.QueryEscape("deleted "+p+" — recoverable from its history"), http.StatusSeeOther)
+	back := "/admin?dir=" + url.QueryEscape(normFolder(r.FormValue("dir")))
+	http.Redirect(w, r, back+"&msg="+url.QueryEscape("deleted "+p+" — recoverable from its history"), http.StatusSeeOther)
 }
 
 func (s *Server) adminVersions(w http.ResponseWriter, r *http.Request) {
@@ -503,7 +409,6 @@ func (s *Server) adminNow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	folder = strings.TrimSuffix(clean, "/") + "/"
-	s.ensureStream(folder)
 	path := s.Store.NewStreamPath(folder, time.Now().In(s.loc()))
 	http.Redirect(w, r, "/admin/edit?new=1&path="+url.QueryEscape(path), http.StatusSeeOther)
 }
@@ -536,7 +441,7 @@ func (s *Server) adminFeedToggle(w http.ResponseWriter, r *http.Request) {
 			limit = 30
 		}
 		// seed an editable config rather than an opaque marker
-		body := store.DefaultFeedMarker(title, author, limit, false)
+		body := store.DefaultFeedMarker(title, author, limit)
 		if _, err := s.Store.SavePage(marker, body, "", "web"); err != nil {
 			msg = "could not enable feed: " + err.Error()
 		} else {
@@ -549,7 +454,7 @@ func (s *Server) adminFeedToggle(w http.ResponseWriter, r *http.Request) {
 			msg = "feed disabled for " + folder
 		}
 	}
-	http.Redirect(w, r, "/admin?msg="+url.QueryEscape(msg), http.StatusSeeOther)
+	http.Redirect(w, r, "/admin?dir="+url.QueryEscape(folder)+"&msg="+url.QueryEscape(msg), http.StatusSeeOther)
 }
 
 func (s *Server) adminStats(w http.ResponseWriter, r *http.Request) {

@@ -529,10 +529,6 @@ func (s *Site) List(urlDir string) []Entry {
 		return nil
 	}
 	inFeedFolder := dir != "" && s.Store.IsFeedFolder(prefix)
-	// a stream's entries are notes, not documents: never list them
-	if dir != "" && s.Store.HidesFiles(prefix) {
-		return nil
-	}
 	var out []Entry
 	seenDirs := map[string]bool{}
 	for _, m := range metas {

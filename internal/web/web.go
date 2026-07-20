@@ -125,21 +125,6 @@ func (s *Server) nowFolder() string {
 	return f
 }
 
-// ensureStream marks a folder as a hidden-file stream the first time a note
-// lands in it, so notes never leak into listings.
-func (s *Server) ensureStream(folder string) {
-	if s.Store.IsFeedFolder(folder) {
-		return
-	}
-	title := strings.Trim(folder, "/")
-	if title == "" {
-		title = "Now"
-	}
-	title = strings.ToUpper(title[:1]) + title[1:]
-	marker := store.DefaultFeedMarker(title, s.Cfg.Feeds.Author, 30, true)
-	_, _ = s.Store.SavePage(folder+store.FeedMarker, marker, "", "auto")
-}
-
 func (s *Server) loc() *time.Location {
 	if s.Loc != nil {
 		return s.Loc

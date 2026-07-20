@@ -197,9 +197,9 @@ func TestHits(t *testing.T) {
 
 func TestStreamPagesAndPaths(t *testing.T) {
 	st := openTest(t)
-	_, _ = st.SavePage("/now/"+FeedMarker, DefaultFeedMarker("Now", "", 30, true), "", "t")
-	if !st.HidesFiles("/now/") {
-		t.Fatal("hide_files not parsed from the marker")
+	_, _ = st.SavePage("/now/"+FeedMarker, DefaultFeedMarker("Now", "", 30), "", "t")
+	if !st.IsFeedFolder("/now/") {
+		t.Fatal("marker not recognised")
 	}
 	p1 := st.NewStreamPath("/now/", time.Date(2026, 7, 20, 14, 23, 0, 0, time.UTC))
 	if p1 != "/now/2026-07-20-1423.gmi" {
@@ -395,7 +395,7 @@ func TestFeedFoldersAndEffectiveDate(t *testing.T) {
 		t.Errorf("marker author/limit = %+v", fs)
 	}
 	// the generated default parses back to what it claims
-	def := ParseFeedMarker(DefaultFeedMarker("T", "A", 12, false))
+	def := ParseFeedMarker(DefaultFeedMarker("T", "A", 12))
 	if def.Title != "T" || def.Author != "A" || def.Limit != 12 {
 		t.Errorf("default marker round-trip = %+v", def)
 	}

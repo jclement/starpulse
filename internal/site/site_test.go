@@ -204,7 +204,7 @@ func TestCountDirectiveAndStats(t *testing.T) {
 
 func TestNowDirectiveAndAuthoredPage(t *testing.T) {
 	sy, st := testSite(t)
-	save(t, st, "/now/"+store.FeedMarker, string(store.DefaultFeedMarker("Now", "", 30, true)))
+	save(t, st, "/now/"+store.FeedMarker, string(store.DefaultFeedMarker("Now", "", 30)))
 	save(t, st, "/now/2026-07-19-0900.gmi", "hello from now")
 	save(t, st, "/now/2026-07-20-0900.gmi", "second update")
 
@@ -262,7 +262,7 @@ func TestLatestDirective(t *testing.T) {
 		t.Errorf("empty stream should render empty, not error:\n%s", g)
 	}
 
-	save(t, st, "/now/"+store.FeedMarker, string(store.DefaultFeedMarker("Now", "", 30, true)))
+	save(t, st, "/now/"+store.FeedMarker, string(store.DefaultFeedMarker("Now", "", 30)))
 	save(t, st, "/now/2026-07-19-0900.gmi", "older note")
 	save(t, st, "/now/2026-07-20-0900.gmi", "# Newest\n\nthe newest note")
 

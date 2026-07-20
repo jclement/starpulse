@@ -626,10 +626,6 @@ func (m *model) saveEdit() (tea.Model, tea.Cmd) {
 			m.setStatus("post failed: "+err.Error(), true)
 			return m, nil
 		}
-		if !m.store.IsFeedFolder(m.nowFolder) {
-			_, _ = m.store.SavePage(m.nowFolder+store.FeedMarker,
-				store.DefaultFeedMarker("Now", "", 30, true), "", "auto")
-		}
 		m.mode = modeBrowse
 		m.navigate(m.url, false)
 		m.setStatus("note published ✓ ("+path+")", false)

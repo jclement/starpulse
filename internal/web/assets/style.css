@@ -421,16 +421,6 @@ input.filter {
   margin: 0.6em 0;
 }
 input.filter:focus { outline: 2px solid var(--accent); border-color: transparent; }
-tr.folder-row td {
-  background: var(--pre-bg);
-  color: var(--accent);
-  font-weight: 600;
-  font-size: 0.85em;
-  border-bottom: 1px solid var(--line);
-  position: sticky;
-  top: 0;
-}
-tr.page-row td:first-child { padding-left: 1.4em; }
 .hl { background: var(--sel); border-radius: 2px; }
 
 /* admin tables need more room than the prose reading column */
@@ -455,21 +445,18 @@ form.del button.linkish, form.feedtoggle button.linkish, button.linkish {
   text-decoration: none;
 }
 form.del button.linkish:hover, button.linkish:hover { text-decoration: underline; text-underline-offset: 3px; color: #b3402a; }
-/* folder row actions read as quiet text, not controls (must out-specify
-   the generic .linkish rule above, which paints them accent-coloured) */
-tr.folder-row form.feedtoggle button.linkish,
-tr.folder-row button.reveal,
-tr.folder-row a.newpost {
+/* row actions read as quiet text, not controls (must out-specify the generic
+   .linkish rule above, which paints them accent-coloured) */
+table.browse form.del button.linkish,
+dl.fset form button.linkish {
   font-weight: 400;
-  font-size: 0.85em;
   color: var(--dim);
   text-decoration: none;
 }
-tr.folder-row form.feedtoggle button.linkish:hover,
-tr.folder-row button.reveal:hover,
-tr.folder-row a.newpost:hover { color: var(--accent); text-decoration: underline; }
-
-a.newpost { font-weight: 400; font-size: 0.9em; margin-left: 0.6em; }
+table.browse form.del button.linkish:hover,
+dl.fset form button.linkish:hover { color: #b3402a; text-decoration: underline; }
+a.newpost { font-weight: 400; color: var(--accent); text-decoration: none; }
+a.newpost:hover { text-decoration: underline; }
 
 /* highlighted code blocks: same chrome as <pre>, colours from highlight.css */
 .hl {
@@ -574,9 +561,48 @@ table.kv td:last-child { width: 100%; padding-right: 0; }
   table.kv td:first-child { font-weight: 600; }
 }
 
-table.admin td:last-child, table.admin th:last-child { text-align: right; }
-table.admin tr.folder-row td { text-align: left; }
+/* ---- the folder browser ----
+   One folder per screen: subfolders first, then files. Three columns —
+   name, when, actions — because a fourth never survived a phone. */
+table.browse td { padding: 0.45em 0.5em 0.45em 0; vertical-align: baseline; }
+table.browse td:first-child { width: 100%; overflow-wrap: anywhere; }
+table.browse td.num, table.browse td.acts { white-space: nowrap; text-align: right; width: 1%; }
+table.browse tr.up td { padding-bottom: 0.7em; }
+table.browse tr.up a { color: var(--dim); text-decoration: none; }
+a.dirlink { font-weight: 600; }
+/* the machinery — .feed, .header, .footer, .css — is dim, not absent */
+table.browse tr.special td:first-child a { color: var(--dim); }
+.badge {
+  font-size: 0.75em;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--dim);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.05em 0.4em;
+  margin-left: 0.5em;
+  vertical-align: 0.1em;
+}
+p.newhere { margin: 1em 0 2em; text-align: right; }
 
-/* a stream's entries are notes, not documents: collapsed until asked for */
-tbody.folder-group.stream tr.page-row { display: none; }
-tbody.folder-group.stream.revealed tr.page-row { display: table-row; }
+/* folder settings: label/value lines, every one of which writes a file */
+dl.fset {
+  margin: 0.4em 0 1.6em;
+  padding: 0.7em 0.9em;
+  background: var(--pre-bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 0.9em;
+}
+dl.fset > div { display: flex; gap: 0.9em; align-items: baseline; padding: 0.18em 0; }
+dl.fset dt { color: var(--dim); width: 5.5em; flex: none; }
+dl.fset dd { margin: 0; }
+dl.fset .on { color: var(--fg); }
+dl.fset a.absent { color: var(--dim); text-decoration: line-through; text-decoration-color: var(--line); }
+
+@media (max-width: 34rem) {
+  dl.fset > div { flex-wrap: wrap; gap: 0.3em 0.7em; }
+  dl.fset dt { width: auto; font-weight: 600; }
+  table.browse td { padding: 0.4em 0.35em 0.4em 0; }
+  table.browse td.num { display: none; }
+}

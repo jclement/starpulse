@@ -52,7 +52,7 @@ func postNote(t *testing.T, st *store.Store, folder, body string) string {
 	t.Helper()
 	if !st.IsFeedFolder(folder) {
 		if _, err := st.SavePage(folder+store.FeedMarker,
-			store.DefaultFeedMarker("Now", "", 30, true), "", "t"); err != nil {
+			store.DefaultFeedMarker("Now", "", 30), "", "t"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -163,59 +163,108 @@ func TestUploadedActiveContentNeutralized(t *testing.T) {
 	resp3.Body.Close()
 }
 
-func TestAdminFolderGroupingAndFilter(t *testing.T) {
+func TestAdminFolderBrowser(t *testing.T) {
 	_, st, ts := testServer(t)
 	_, _ = st.SavePage("/index.gmi", []byte("# Home"), "", "t")
 	_, _ = st.SavePage("/posts/a.gmi", []byte("# Post A"), "", "t")
 	_, _ = st.SavePage("/posts/b.gmi", []byte("# Post B"), "", "t")
-	// these bracket /posts/ alphabetically — the exact interleaving trap
+	_, _ = st.SavePage("/posts/2026/deep.gmi", []byte("# Deep"), "", "t")
+	// these bracket /posts/ alphabetically — the old interleaving trap
 	_, _ = st.SavePage("/now.gmi", []byte("# Now"), "", "t")
 	_, _ = st.SavePage("/projects.gmi", []byte("# Projects"), "", "t")
 	client := login(t, ts, testPassword)
-	resp, err := client.Get(ts.URL + "/admin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
-	body := string(b)
-	// filter box + folder groups + per-row filter keys present
-	for _, want := range []string{
-		`id="page-filter"`,
-		`class="folder-group" data-folder="/posts/"`,
-		`class="page-row" data-key="/posts/a.gmi post a"`,
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("admin list missing %q", want)
+
+	get := func(path string) string {
+		resp, err := client.Get(ts.URL + path)
+		if err != nil {
+			t.Fatal(err)
 		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return string(b)
 	}
-	// every row offers a delete action
-	if n := strings.Count(body, `action="/admin/delete"`); n < 5 {
-		t.Errorf("delete action on only %d rows, want one per page", n)
-	}
-	if !strings.Contains(body, `<input type="hidden" name="path" value="/posts/a.gmi">`) {
-		t.Error("row delete form missing its path")
+	// the listing only — the inline search index below it holds every path
+	// by design, so a naive Contains would always "find" everything
+	browsed := func(path string) string {
+		body := get(path)
+		i := strings.Index(body, `<div id="browse">`)
+		j := strings.Index(body, `<script id="page-index"`)
+		if i < 0 || j < i {
+			t.Fatalf("%s: no browse section", path)
+		}
+		return body[i:j]
 	}
 
-	// each folder must appear EXACTLY once, even though a flat path sort
-	// interleaves /posts/* between /now.gmi and /projects.gmi
-	if n := strings.Count(body, `data-folder="/"`); n != 1 {
-		t.Errorf("root folder group appears %d times, want 1", n)
+	// ---- root shows folders and root files, and nothing deeper ----
+	root := browsed("/admin")
+	for _, want := range []string{
+		`href="/admin?dir=%2Fposts%2F"`, // the folder is a destination
+		"now.gmi", "projects.gmi", "index.gmi",
+	} {
+		if !strings.Contains(root, want) {
+			t.Errorf("root screen missing %q", want)
+		}
 	}
-	if n := strings.Count(body, `data-folder="/posts/"`); n != 1 {
-		t.Errorf("posts folder group appears %d times, want 1", n)
+	if strings.Contains(root, "a.gmi") {
+		t.Error("root screen leaked a page from inside /posts/")
 	}
-	// root group must come before the posts group, and contain BOTH the
-	// alphabetically-before and alphabetically-after root pages
-	rootAt := strings.Index(body, `data-folder="/"`)
-	postsAt := strings.Index(body, `data-folder="/posts/"`)
-	if rootAt > postsAt {
-		t.Error("root folder should sort first")
+	// the subfolder count is every descendant, not just direct children
+	if !strings.Contains(root, ">3<") {
+		t.Error("/posts/ should count 3 descendants")
 	}
-	rootSection := body[rootAt:postsAt]
-	for _, want := range []string{"/now.gmi", "/projects.gmi"} {
-		if !strings.Contains(rootSection, want) {
-			t.Errorf("root group missing %s — folder bucketing is split", want)
+
+	// ---- drilling in shows that folder, with a way back ----
+	posts := browsed("/admin?dir=/posts/")
+	for _, want := range []string{"a.gmi", "b.gmi", "2026/", `href="/admin?dir=%2F"`} {
+		if !strings.Contains(posts, want) {
+			t.Errorf("/posts/ screen missing %q", want)
+		}
+	}
+	if strings.Contains(posts, "projects.gmi") {
+		t.Error("/posts/ screen leaked a root page")
+	}
+	if !strings.Contains(posts, `action="/admin/feed"`) {
+		t.Error("/posts/ screen missing its feed control")
+	}
+	// deep folders keep working, and the breadcrumb walks back up
+	deep := browsed("/admin?dir=/posts/2026/")
+	if !strings.Contains(deep, "deep.gmi") || !strings.Contains(deep, `href="/admin?dir=%2Fposts%2F"`) {
+		t.Error("nested folder screen or its breadcrumb is wrong")
+	}
+
+	// ---- search cuts across folders, so drilling in hides nothing ----
+	hits := browsed("/admin?q=post")
+	for _, want := range []string{"/posts/a.gmi", "/posts/b.gmi"} {
+		if !strings.Contains(hits, want) {
+			t.Errorf("search missing %q", want)
+		}
+	}
+	if strings.Contains(hits, "projects.gmi") {
+		t.Error("search matched a page it should not have")
+	}
+	// and the same index is inlined for the live filter
+	if full := get("/admin"); !strings.Contains(full, `id="page-index"`) || !strings.Contains(full, `"/posts/a.gmi"`) {
+		t.Error("inline search index missing or incomplete")
+	}
+	// every file row still offers delete, carrying its folder for the return trip
+	if !strings.Contains(posts, `<input type="hidden" name="path" value="/posts/a.gmi">`) ||
+		!strings.Contains(posts, `<input type="hidden" name="dir" value="/posts/">`) {
+		t.Error("row delete form missing its path or return folder")
+	}
+}
+
+func TestNormFolderRejectsTraversal(t *testing.T) {
+	for in, want := range map[string]string{
+		"":                  "/",
+		"/":                 "/",
+		"posts":             "/posts/",
+		"/posts/":           "/posts/",
+		"/posts/../../etc/": "/etc/", // climbing out lands inside, not above
+		"/../..":            "/",
+		"//posts//2026//":   "/posts/2026/",
+	} {
+		if got := normFolder(in); got != want {
+			t.Errorf("normFolder(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
@@ -286,8 +335,8 @@ func TestNewPostLinkOnFeedFolders(t *testing.T) {
 	resp, _ := client.Get(ts.URL + "/admin")
 	b, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if !strings.Contains(string(b), "new post") {
-		t.Error("no new-post link on the feed folder")
+	if !strings.Contains(string(b), `href="/admin/edit?new=1&amp;path=%2Fposts%2F"`) {
+		t.Error("no create link on the feed folder row")
 	}
 	// names stay clean — the date comes from the database now
 	resp2, _ := client.Get(ts.URL + "/admin/edit?new=1&path=" + url.QueryEscape("/posts/"))
@@ -309,14 +358,17 @@ func TestFeedToggle(t *testing.T) {
 		t.Fatalf("unmarked folder already has a feed: %d", code)
 	}
 
-	// the admin offers a toggle on non-root folders
-	resp, _ := client.Get(ts.URL + "/admin")
+	// a folder's own screen offers the toggle; the root screen does not
+	resp, _ := client.Get(ts.URL + "/admin?dir=/journal/")
 	b, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if !strings.Contains(string(b), `action="/admin/feed"`) {
-		t.Error("no feed toggle on the folder row")
+		t.Error("no feed toggle on the folder screen")
 	}
-	if strings.Contains(string(b), `value="/"`+"\n") {
+	resp2, _ := client.Get(ts.URL + "/admin")
+	b2, _ := io.ReadAll(resp2.Body)
+	resp2.Body.Close()
+	if strings.Contains(string(b2), `action="/admin/feed"`) {
 		t.Error("root folder should not offer a feed toggle")
 	}
 
@@ -510,7 +562,7 @@ func TestLoginFlow(t *testing.T) {
 	}
 	b, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if resp.StatusCode != 200 || !strings.Contains(string(b), "<h1>Pages</h1>") {
+	if resp.StatusCode != 200 || !strings.Contains(string(b), `<h1><a href="/admin">/</a>`) {
 		t.Fatalf("admin: %d", resp.StatusCode)
 	}
 	resp, _ = client.Get(ts.URL + "/")
