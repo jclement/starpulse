@@ -8,7 +8,8 @@ A single-binary smolweb CMS. One SQLite file, four doors in:
   with a pico-style full-screen editor when you log in as `admin`
 - **telnet** — the same TUI browser, read-only, over honest-to-goodness
   telnet (`telnet host`) — BBS nostalgia included
-- **tor** hidden service (managed automatically — both web and gemini)
+- **tor** hidden service (managed automatically — every enabled door gets an
+  onion port: web, gemini, ssh, and telnet)
 
 Content is [gemtext](https://geminiprotocol.net/docs/gemtext.gmi), authored in a
 no-frills web admin, over titan, or through the built-in **REST API** and
@@ -82,7 +83,8 @@ titan:
   cert_fingerprints: ["<sha256 of your client cert>"]
 
 tor:
-  enabled: true                # runs a private tor, registers the onion for you
+  enabled: true                # runs a private tor; every enabled door is
+                               # forwarded (onion:80/1965/22/23)
   # onion: xyz.onion           # or point at an externally-managed hidden service
 
 timezone: "America/Edmonton"  # IANA zone for displayed timestamps (empty = server local)

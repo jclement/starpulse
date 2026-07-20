@@ -74,12 +74,24 @@ func Serve(cfg *config.Config, logger *log.Logger) error {
 	var torMgr *tor.Manager
 	onion := func() string { return cfg.Tor.Onion }
 	if cfg.Tor.Enabled {
+		var forwards []tor.Forward
+		if cfg.HTTP.Enabled {
+			forwards = append(forwards, tor.Forward{VirtualPort: 80, LocalAddr: cfg.HTTP.Addr})
+		}
+		if cfg.Gemini.Enabled {
+			forwards = append(forwards, tor.Forward{VirtualPort: 1965, LocalAddr: cfg.Gemini.Addr})
+		}
+		if cfg.SSH.Enabled {
+			forwards = append(forwards, tor.Forward{VirtualPort: 22, LocalAddr: cfg.SSH.Addr})
+		}
+		if cfg.Telnet.Enabled {
+			forwards = append(forwards, tor.Forward{VirtualPort: 23, LocalAddr: cfg.Telnet.Addr})
+		}
 		torMgr = &tor.Manager{
-			Binary:     cfg.Tor.Binary,
-			DataDir:    cfg.DataDir,
-			HTTPAddr:   cfg.HTTP.Addr,
-			GeminiAddr: cfg.Gemini.Addr,
-			Log:        logger.With("proto", "tor"),
+			Binary:   cfg.Tor.Binary,
+			DataDir:  cfg.DataDir,
+			Forwards: forwards,
+			Log:      logger.With("proto", "tor"),
 		}
 		if err := torMgr.Start(); err != nil {
 			return err
