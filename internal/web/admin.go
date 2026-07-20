@@ -66,8 +66,22 @@ func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
 	if msg := r.URL.Query().Get("msg"); msg != "" {
 		fmt.Fprintf(&b, `<p class="flash">%s</p>`+"\n", html.EscapeString(msg))
 	}
-	b.WriteString(`<table class="admin"><tr><th>path</th><th>title</th><th class="right">size</th><th>updated</th><th></th></tr>` + "\n")
+	fmt.Fprintf(&b, `<input type="search" id="page-filter" class="filter" placeholder="filter %d pages by path or title…" autocomplete="off" autofocus>`+"\n", len(metas))
+	b.WriteString(`<p id="filter-count" class="dim" hidden></p>` + "\n")
+	b.WriteString(`<table class="admin" id="pages-table"><thead><tr><th>path</th><th>title</th><th class="right">size</th><th>updated</th><th></th></tr></thead>` + "\n")
+
+	curFolder := "\x00"
 	for _, m := range metas {
+		folder := pageFolder(m.Path)
+		if folder != curFolder {
+			curFolder = folder
+			label := folder
+			if label == "/" {
+				label = "/ (root)"
+			}
+			fmt.Fprintf(&b, `<tbody class="folder-group" data-folder="%s"><tr class="folder-row"><td colspan="5">%s</td></tr>`+"\n",
+				html.EscapeString(strings.ToLower(folder)), html.EscapeString(label))
+		}
 		title := m.Title
 		view := ""
 		if !m.Binary && !store.Hidden(m.Path) && strings.HasSuffix(m.Path, ".gmi") {
@@ -75,13 +89,26 @@ func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
 		} else if m.Binary || !store.Hidden(m.Path) {
 			view = fmt.Sprintf(` <a href="%s">view</a>`, html.EscapeString(m.Path))
 		}
-		fmt.Fprintf(&b, `<tr><td><a href="/admin/edit?path=%s">%s</a></td><td>%s</td><td class="right dim">%s</td><td class="dim">%s</td><td class="dim">%s · <a href="/admin/versions?path=%s">history</a></td></tr>`+"\n",
+		fmt.Fprintf(&b, `<tr class="page-row" data-key="%s"><td><a href="/admin/edit?path=%s">%s</a></td><td>%s</td><td class="right dim">%s</td><td class="dim">%s</td><td class="dim">%s · <a href="/admin/versions?path=%s">history</a></td></tr>`+"\n",
+			html.EscapeString(strings.ToLower(m.Path+" "+title)),
 			url.QueryEscape(m.Path), html.EscapeString(m.Path), html.EscapeString(title),
 			sizeStr(m.Size), m.Updated.In(s.loc()).Format("2006-01-02 15:04"), view, url.QueryEscape(m.Path))
+	}
+	if curFolder != "\x00" {
+		b.WriteString("</tbody>")
 	}
 	b.WriteString("</table>\n")
 	b.WriteString(`<p class="dim">Special files: <code>.header</code> and <code>.footer</code> (gemtext, inherited down folders), <code>.theme</code> (CSS, inherited down folders). Create them like any page, e.g. <code>/posts/.header</code>.</p>`)
 	s.adminRender(w, r, "pages", b.String())
+}
+
+// pageFolder returns the containing folder of a storage path ("/foo/bar.gmi"
+// → "/foo/", "/x.gmi" → "/").
+func pageFolder(p string) string {
+	if i := strings.LastIndexByte(p, '/'); i > 0 {
+		return p[:i+1]
+	}
+	return "/"
 }
 
 func sizeStr(n int64) string {

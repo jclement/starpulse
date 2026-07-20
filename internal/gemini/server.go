@@ -179,6 +179,20 @@ func (s *Server) serveGemini(conn net.Conn, u *url.URL) (int, string) {
 		return s.serveRaw(conn, "/"+raw)
 	}
 
+	// Editors (clients presenting an authorized cert) get the RAW stored
+	// source, not the assembled page. This makes titan round-trips clean:
+	// Lagrange pre-fills its editor from what it fetches, so serving the
+	// rendered page (header/footer + expanded directives) would freeze all
+	// of that into the body on save. With an active identity you see/edit
+	// source; without it you read the rendered page.
+	if _, ok := s.authorizedCert(conn); ok {
+		if pg := s.editableSource(u.Path); pg != nil {
+			respond(conn, 20, "text/gemini; charset=utf-8")
+			_, _ = conn.Write(pg.Content)
+			return 20, "raw " + pg.Path
+		}
+	}
+
 	res := s.Site.Resolve(u.Path, s.protoFor(u.Hostname()))
 	switch res.Type {
 	case site.RedirectResult:
@@ -196,6 +210,21 @@ func (s *Server) serveGemini(conn net.Conn, u *url.URL) (int, string) {
 		respond(conn, 51, "not found")
 		return 51, "not found"
 	}
+}
+
+// editableSource resolves a request path to its stored source page (the raw
+// gemtext an editor should see), or nil if the path has no editable source
+// (missing, a directory listing, a static file, or the built-in search).
+func (s *Server) editableSource(urlPath string) *store.Page {
+	res := s.Site.Resolve(urlPath, "") // proto "" = don't count editor views
+	if res.Type != site.PageResult || res.Page.SourcePath == "" {
+		return nil
+	}
+	pg, err := s.Store.GetPage(res.Page.SourcePath)
+	if err != nil {
+		return nil
+	}
+	return pg
 }
 
 // serveRaw returns a page's unrendered source (for titan editing round

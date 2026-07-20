@@ -140,3 +140,45 @@
     if (help.open && !help.contains(e.target)) help.open = false;
   });
 })();
+
+// admin page-list filter: live substring match on path/title, keeps folder
+// headers visible only when they have matches. Works fully client-side.
+(function () {
+  var input = document.getElementById("page-filter");
+  var table = document.getElementById("pages-table");
+  if (!input || !table) return;
+  var count = document.getElementById("filter-count");
+  var rows = Array.prototype.slice.call(table.querySelectorAll("tr.page-row"));
+  var groups = Array.prototype.slice.call(table.querySelectorAll("tbody.folder-group"));
+
+  function apply() {
+    var q = input.value.trim().toLowerCase();
+    var terms = q.split(/\s+/).filter(Boolean);
+    var shown = 0;
+    rows.forEach(function (r) {
+      var key = r.getAttribute("data-key");
+      var ok = terms.every(function (t) { return key.indexOf(t) !== -1; });
+      r.hidden = !ok;
+      if (ok) shown++;
+    });
+    // hide a folder group whose rows are all filtered out
+    groups.forEach(function (g) {
+      var anyVisible = g.querySelector("tr.page-row:not([hidden])") !== null;
+      g.querySelector("tr.folder-row").hidden = !anyVisible;
+    });
+    if (q) {
+      count.hidden = false;
+      count.textContent = "showing " + shown + " of " + rows.length;
+    } else {
+      count.hidden = true;
+    }
+  }
+  input.addEventListener("input", apply);
+  // '/' focuses the filter from anywhere on the page
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "/" && document.activeElement !== input) {
+      e.preventDefault();
+      input.focus();
+    }
+  });
+})();

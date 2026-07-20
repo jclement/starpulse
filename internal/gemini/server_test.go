@@ -251,6 +251,51 @@ func TestTitanEditsIndexAndKeepsGemtext(t *testing.T) {
 	}
 }
 
+func TestEditorSeesRawSourceRoundTrip(t *testing.T) {
+	ts := startServer(t)
+	// a page with inherited chrome and directives — the classic double-include trap
+	_, _ = ts.st.SavePage("/.header", []byte("=> / HOME"), "", "seed")
+	_, _ = ts.st.SavePage("/.footer", []byte("viewed {{count}} times"), "", "seed")
+	src := "# Real Source\n\n{{now 3}}\n\nbody text"
+	_, _ = ts.st.SavePage("/index.gmi", []byte(src), "", "seed")
+
+	// a normal reader (no cert) gets the ASSEMBLED page
+	plain := ts.request(t, "gemini://localhost/", nil, nil)
+	if !strings.Contains(plain, "HOME") || !strings.Contains(plain, "viewed ") {
+		t.Errorf("reader should see assembled page:\n%s", plain)
+	}
+	if strings.Contains(plain, "{{now 3}}") {
+		t.Errorf("reader saw an unexpanded directive:\n%s", plain)
+	}
+
+	// an EDITOR (authorized cert) gets the raw stored source, verbatim
+	raw := ts.request(t, "gemini://localhost/", &ts.client, nil)
+	body := raw[strings.Index(raw, "\r\n")+2:]
+	if body != src {
+		t.Fatalf("editor should get raw source.\n got: %q\nwant: %q", body, src)
+	}
+
+	// round-trip: upload exactly what the editor was shown, unchanged
+	req := fmt.Sprintf("titan://localhost/;mime=text/plain;size=%d", len(body))
+	if resp := ts.request(t, req, &ts.client, []byte(body)); !strings.HasPrefix(resp, "30 ") {
+		t.Fatalf("round-trip upload: %q", resp)
+	}
+	pg, _ := ts.st.GetPage("/index.gmi")
+	if string(pg.Content) != src {
+		t.Errorf("round-trip corrupted the page:\n got: %q\nwant: %q", pg.Content, src)
+	}
+	// specifically: chrome must not have been frozen into the body
+	if strings.Contains(string(pg.Content), "HOME") || strings.Contains(string(pg.Content), "viewed ") {
+		t.Error("header/footer got frozen into the page body")
+	}
+
+	// a reader still sees assembled chrome afterwards
+	after := ts.request(t, "gemini://localhost/", nil, nil)
+	if !strings.Contains(after, "HOME") {
+		t.Error("chrome lost after round-trip")
+	}
+}
+
 func TestTitanLimitsAndBadPaths(t *testing.T) {
 	ts := startServer(t)
 	huge := ts.cfg.MaxUploadBytes + 1

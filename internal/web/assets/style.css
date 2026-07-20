@@ -373,3 +373,27 @@ details.help[open] summary { outline: 2px solid var(--accent); }
     max-height: 80vh;
   }
 }
+
+/* ---- admin page filter + folder grouping ---- */
+input.filter {
+  width: 100%;
+  font: inherit;
+  color: var(--fg);
+  background: var(--pre-bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.5em 0.8em;
+  margin: 0.6em 0;
+}
+input.filter:focus { outline: 2px solid var(--accent); border-color: transparent; }
+tr.folder-row td {
+  background: var(--pre-bg);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.85em;
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+}
+tr.page-row td:first-child { padding-left: 1.4em; }
+.hl { background: var(--sel); border-radius: 2px; }

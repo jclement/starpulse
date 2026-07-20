@@ -145,6 +145,32 @@ func TestUploadedActiveContentNeutralized(t *testing.T) {
 	resp3.Body.Close()
 }
 
+func TestAdminFolderGroupingAndFilter(t *testing.T) {
+	_, st, ts := testServer(t)
+	_, _ = st.SavePage("/index.gmi", []byte("# Home"), "", "t")
+	_, _ = st.SavePage("/posts/a.gmi", []byte("# Post A"), "", "t")
+	_, _ = st.SavePage("/posts/b.gmi", []byte("# Post B"), "", "t")
+	client := login(t, ts, testPassword)
+	resp, err := client.Get(ts.URL + "/admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	body := string(b)
+	// filter box + folder groups + per-row filter keys present
+	for _, want := range []string{
+		`id="page-filter"`,
+		`class="folder-group" data-folder="/posts/"`,
+		`class="page-row" data-key="/posts/a.gmi post a"`,
+		`page-filter`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("admin list missing %q", want)
+		}
+	}
+}
+
 func TestSearchPage(t *testing.T) {
 	_, st, ts := testServer(t)
 	_, _ = st.SavePage("/x.gmi", []byte("# Xylophones\n\nmusic and mallets"), "", "t")
