@@ -30,6 +30,8 @@ Usage:
   starpulse uninstall      remove the systemd service [--purge|--yes]
   starpulse self-update    update from the latest GitHub release
   starpulse import <dir>   import a content directory into the database
+  starpulse status         show service health, protocol graphs, top pages
+  starpulse doctor         run configuration and connectivity checks
   starpulse hash-password  bcrypt-hash a password for config.yaml
   starpulse version        print version
   starpulse health         exit 0 if the local server is healthy
@@ -93,6 +95,14 @@ func main() {
 		cfg, err := config.Load(*cfgPath)
 		run(err)
 		run(cli.Import(cfg, logger, rest[0]))
+	case "status":
+		cfg, err := config.Load(*cfgPath)
+		run(err)
+		run(cli.Status(cfg))
+	case "doctor":
+		cfg, err := config.Load(*cfgPath)
+		run(err)
+		run(cli.Doctor(cfg))
 	case "hash-password":
 		run(hashPassword())
 	case "version":

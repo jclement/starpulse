@@ -519,6 +519,14 @@ func (s *Store) DeleteNow(id int64) error {
 	return nil
 }
 
+// Totals returns overall row counts for status displays.
+func (s *Store) Totals() (pages, versions, nows int64) {
+	_ = s.db.QueryRow(`SELECT COUNT(*) FROM pages`).Scan(&pages)
+	_ = s.db.QueryRow(`SELECT COUNT(*) FROM versions`).Scan(&versions)
+	_ = s.db.QueryRow(`SELECT COUNT(*) FROM now_posts`).Scan(&nows)
+	return
+}
+
 // ---- settings -----------------------------------------------------------
 
 // GetSetting returns a settings value ("" when unset).
