@@ -188,9 +188,15 @@ func (m *model) openLink(i int) {
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width, m.height = msg.Width, msg.Height
-		m.vp.Width = msg.Width
-		m.vp.Height = max(1, msg.Height-3)
+		// headless PTYs can report 0x0 — keep the previous (default) size
+		if msg.Width > 0 {
+			m.width = msg.Width
+		}
+		if msg.Height > 0 {
+			m.height = msg.Height
+		}
+		m.vp.Width = m.width
+		m.vp.Height = max(1, m.height-3)
 		if m.mode == modeEdit {
 			m.sizeEditor()
 		}
