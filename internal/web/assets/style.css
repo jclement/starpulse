@@ -253,7 +253,7 @@ body.editor-body { height: 100vh; height: 100dvh; overflow: hidden; }
 .ed-spacer { flex: 1; }
 #ed-status { font-size: 0.85em; color: var(--accent-2); white-space: nowrap; }
 
-.ed-main { flex: 1; display: flex; min-height: 0; }
+.ed-main { flex: 1; display: flex; min-height: 0; position: relative; }
 .ed-main textarea {
   flex: 1;
   min-width: 0;
@@ -280,12 +280,20 @@ body.editor-body { height: 100vh; height: 100dvh; overflow: hidden; }
 }
 .ed-preview > div { padding: 0.4em 1.4em 4em; }
 
-/* narrow screens: preview becomes a full overlay over the textarea */
+/* narrow screens: compact toolbar — path on its own row, buttons in one row */
+@media (max-width: 700px) {
+  .ed-bar { padding: 0.45em 0.6em; gap: 0.35em; }
+  .ed-bar input[type="text"] { flex: 1 1 100%; order: -1; }
+  .ed-bar .btn, .ed-bar button { font-size: 0.8em; padding: 0.35em 0.65em; }
+  #ed-status { font-size: 0.75em; }
+}
+
+/* narrow screens: preview becomes an overlay over the textarea only —
+   anchored inside .ed-main so it can never cover the toolbar */
 @media (max-width: 1000px) {
   .ed-preview {
-    position: fixed;
+    position: absolute;
     inset: 0;
-    top: 3.4em;
     border-left: none;
     z-index: 10;
   }
