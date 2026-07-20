@@ -1,0 +1,363 @@
+// Package gemini implements the gemini:// server and titan:// uploads.
+// Titan writes go straight into the page store (versioned), gated by an
+// allowlist of client-certificate fingerprints.
+package gemini
+
+import (
+	"bufio"
+	"crypto/sha256"
+	"crypto/tls"
+	"fmt"
+	"io"
+	"net"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/log"
+
+	"github.com/jclement/starpulse/internal/auth"
+	"github.com/jclement/starpulse/internal/config"
+	"github.com/jclement/starpulse/internal/site"
+	"github.com/jclement/starpulse/internal/store"
+)
+
+const (
+	maxRequestLen = 1024
+	ioTimeout     = 30 * time.Second
+)
+
+// Server is a gemini + titan protocol server.
+type Server struct {
+	Cfg   *config.Config
+	Store *store.Store
+	Site  *site.Site
+	Log   *log.Logger
+	TLS   *tls.Config
+	// Onion returns the hidden-service hostname ("" when tor is off).
+	Onion func() string
+
+	ln net.Listener
+}
+
+// Listen opens the TLS listener without serving (split out for tests).
+func (s *Server) Listen() (net.Listener, error) {
+	ln, err := tls.Listen("tcp", s.Cfg.Gemini.Addr, s.TLS)
+	if err != nil {
+		return nil, err
+	}
+	s.ln = ln
+	return ln, nil
+}
+
+// Serve accepts gemini connections on ln until the listener fails.
+func (s *Server) Serve(ln net.Listener) error {
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			return err
+		}
+		go s.handle(conn)
+	}
+}
+
+// ListenAndServe accepts gemini connections until the listener fails.
+func (s *Server) ListenAndServe() error {
+	ln, err := s.Listen()
+	if err != nil {
+		return err
+	}
+	s.Log.Info("gemini listening", "addr", s.Cfg.Gemini.Addr, "host", s.Cfg.Hostname)
+	return s.Serve(ln)
+}
+
+// Close stops the listener.
+func (s *Server) Close() error {
+	if s.ln != nil {
+		return s.ln.Close()
+	}
+	return nil
+}
+
+func (s *Server) onion() string {
+	if s.Onion != nil {
+		return s.Onion()
+	}
+	return ""
+}
+
+func (s *Server) handle(conn net.Conn) {
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(ioTimeout))
+	start := time.Now()
+
+	r := bufio.NewReaderSize(conn, maxRequestLen+2)
+	line, err := readRequestLine(r)
+	if err != nil {
+		respond(conn, 59, "bad request")
+		return
+	}
+	u, err := url.Parse(line)
+	if err != nil || u.Host == "" || u.User != nil {
+		respond(conn, 59, "bad request")
+		return
+	}
+
+	status, meta := 0, ""
+	switch u.Scheme {
+	case "gemini":
+		status, meta = s.serveGemini(conn, u)
+	case "titan":
+		status, meta = s.serveTitan(conn, r, u)
+	default:
+		status, meta = 53, "proxy request refused"
+		respond(conn, status, meta)
+	}
+
+	logFn := s.Log.Info
+	if status >= 40 {
+		logFn = s.Log.Warn
+	}
+	logFn("req",
+		"status", status,
+		"url", line,
+		"remote", remoteIP(conn),
+		"dur", time.Since(start).Round(time.Millisecond),
+		"meta", meta)
+}
+
+func readRequestLine(r *bufio.Reader) (string, error) {
+	line, err := r.ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	if len(line) > maxRequestLen+2 {
+		return "", fmt.Errorf("request too long")
+	}
+	line = strings.TrimSuffix(line, "\n")
+	line = strings.TrimSuffix(line, "\r")
+	if line == "" {
+		return "", fmt.Errorf("empty request")
+	}
+	return line, nil
+}
+
+func remoteIP(conn net.Conn) string {
+	if h, _, err := net.SplitHostPort(conn.RemoteAddr().String()); err == nil {
+		return h
+	}
+	return conn.RemoteAddr().String()
+}
+
+func respond(w io.Writer, status int, meta string) {
+	fmt.Fprintf(w, "%d %s\r\n", status, meta)
+}
+
+func (s *Server) hostAllowed(host string) bool {
+	return strings.EqualFold(host, s.Cfg.Hostname) || strings.EqualFold(host, "localhost") ||
+		(s.onion() != "" && strings.EqualFold(host, s.onion()))
+}
+
+func (s *Server) protoFor(host string) string {
+	if s.onion() != "" && strings.EqualFold(host, s.onion()) {
+		return "gemini+tor"
+	}
+	return "gemini"
+}
+
+func (s *Server) serveGemini(conn net.Conn, u *url.URL) (int, string) {
+	if !s.hostAllowed(u.Hostname()) {
+		respond(conn, 53, "proxy request refused")
+		return 53, "proxy request refused"
+	}
+
+	if u.Path == "/search" || u.Path == "/search/" {
+		return s.serveSearch(conn, u)
+	}
+	if raw, found := strings.CutPrefix(u.Path, "/raw/"); found {
+		return s.serveRaw(conn, "/"+raw)
+	}
+
+	res := s.Site.Resolve(u.Path, s.protoFor(u.Hostname()))
+	switch res.Type {
+	case site.RedirectResult:
+		respond(conn, 31, res.Location)
+		return 31, res.Location
+	case site.FileResult:
+		respond(conn, 20, res.File.Mime)
+		_, _ = conn.Write(res.File.Content)
+		return 20, res.File.Mime
+	case site.PageResult:
+		respond(conn, 20, "text/gemini; charset=utf-8")
+		_, _ = io.WriteString(conn, res.Page.Gemtext)
+		return 20, "text/gemini"
+	default:
+		respond(conn, 51, "not found")
+		return 51, "not found"
+	}
+}
+
+// serveRaw returns a page's unrendered source (for titan editing round
+// trips). Requires an allowlisted client certificate.
+func (s *Server) serveRaw(conn net.Conn, p string) (int, string) {
+	if _, ok := s.authorizedCert(conn); !ok {
+		respond(conn, 60, "client certificate required")
+		return 60, "client certificate required"
+	}
+	pg, err := s.Store.GetPage(p)
+	if err != nil {
+		respond(conn, 51, "not found")
+		return 51, "not found"
+	}
+	mime := pg.Mime
+	if strings.HasPrefix(mime, "text/gemini") {
+		mime = "text/gemini; charset=utf-8"
+	}
+	respond(conn, 20, mime)
+	_, _ = conn.Write(pg.Content)
+	return 20, "raw " + p
+}
+
+func (s *Server) serveSearch(conn net.Conn, u *url.URL) (int, string) {
+	if u.RawQuery == "" {
+		respond(conn, 10, "Search this capsule:")
+		return 10, "input"
+	}
+	q, err := url.QueryUnescape(u.RawQuery)
+	if err != nil || strings.TrimSpace(q) == "" {
+		respond(conn, 10, "Search this capsule:")
+		return 10, "input"
+	}
+	hits, _ := s.Store.Search(q, 20)
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Search: %s\n\n", q)
+	if len(hits) == 0 {
+		b.WriteString("Nothing found. Try fewer or different words.\n")
+	} else {
+		fmt.Fprintf(&b, "%d result(s):\n\n", len(hits))
+		for _, h := range hits {
+			fmt.Fprintf(&b, "=> %s %s\n", webToGeminiURL(h.Path), titleOr(h.Title, h.Path))
+			if h.Snippet != "" {
+				fmt.Fprintf(&b, "> …%s…\n", h.Snippet)
+			}
+		}
+	}
+	b.WriteString("\n=> / Home\n")
+	respond(conn, 20, "text/gemini; charset=utf-8")
+	_, _ = io.WriteString(conn, b.String())
+	return 20, "search"
+}
+
+func titleOr(t, fallback string) string {
+	if t != "" {
+		return t
+	}
+	return fallback
+}
+
+// webToGeminiURL converts a storage path to its served URL.
+func webToGeminiURL(p string) string {
+	u := strings.TrimSuffix(p, ".gmi")
+	if strings.HasSuffix(u, "/index") {
+		u = strings.TrimSuffix(u, "index")
+	}
+	return u
+}
+
+// ---- titan uploads ------------------------------------------------------
+
+// authorizedCert returns the client cert fingerprint if the connection
+// presented a cert on the configured allowlist.
+func (s *Server) authorizedCert(conn net.Conn) (string, bool) {
+	tlsConn, ok := conn.(*tls.Conn)
+	if !ok {
+		return "", false
+	}
+	certs := tlsConn.ConnectionState().PeerCertificates
+	if len(certs) == 0 {
+		return "", false
+	}
+	fp := auth.Fingerprint(sha256.Sum256(certs[0].Raw))
+	for _, want := range s.Cfg.NormalizedFingerprints() {
+		if want == fp {
+			return fp, true
+		}
+	}
+	return fp, false
+}
+
+// serveTitan handles titan://host/path;mime=...;size=N uploads into the
+// page store. Zero size deletes, per titan convention.
+func (s *Server) serveTitan(conn net.Conn, r *bufio.Reader, u *url.URL) (int, string) {
+	if !s.Cfg.Titan.Enabled {
+		respond(conn, 53, "titan disabled")
+		return 53, "titan disabled"
+	}
+	if !s.hostAllowed(u.Hostname()) {
+		respond(conn, 53, "proxy request refused")
+		return 53, "proxy request refused"
+	}
+	fp, ok := s.authorizedCert(conn)
+	if !ok {
+		if fp == "" {
+			respond(conn, 60, "client certificate required")
+			return 60, "client certificate required"
+		}
+		respond(conn, 61, "certificate not authorized")
+		return 61, "certificate not authorized"
+	}
+
+	// path;mime=text/gemini;size=1234[;token=x]
+	segs := strings.Split(u.Path, ";")
+	rawPath := segs[0]
+	params := map[string]string{}
+	for _, kv := range segs[1:] {
+		if k, v, found := strings.Cut(kv, "="); found {
+			params[k] = v
+		}
+	}
+	size, err := strconv.ParseInt(params["size"], 10, 64)
+	if err != nil || size < 0 || size > s.Cfg.MaxUploadBytes {
+		respond(conn, 59, "bad or excessive size")
+		return 59, "bad size"
+	}
+
+	cleaned, ok := store.CleanPath(rawPath)
+	if !ok {
+		respond(conn, 59, "bad path")
+		return 59, "bad path"
+	}
+
+	author := "titan:" + fp[:12]
+
+	if size == 0 {
+		if err := s.Store.DeletePage(cleaned, author); err != nil {
+			respond(conn, 51, "not found")
+			return 51, "not found"
+		}
+		respond(conn, 20, "text/gemini")
+		fmt.Fprintf(conn, "# Deleted %s\n=> gemini://%s/ Home\n", cleaned, s.Cfg.Hostname)
+		return 20, "deleted " + cleaned
+	}
+
+	content := make([]byte, size)
+	if _, err := io.ReadFull(r, content); err != nil {
+		respond(conn, 40, "short read")
+		return 40, "short read"
+	}
+	mime, err := url.QueryUnescape(params["mime"])
+	if err != nil {
+		mime = ""
+	}
+	if mime == "" || mime == "application/octet-stream" {
+		mime = store.MimeFor(cleaned)
+	}
+	if _, err := s.Store.SavePage(cleaned, content, mime, author); err != nil {
+		respond(conn, 40, "save failed")
+		return 40, "save failed"
+	}
+	geminiURL := "gemini://" + s.Cfg.Hostname + webToGeminiURL(cleaned)
+	respond(conn, 30, geminiURL)
+	return 30, "uploaded " + cleaned
+}

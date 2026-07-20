@@ -1,0 +1,238 @@
+/* owg.fyi — capsule chrome. Terminal-flavored, readable, no JS. */
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/_/fonts/jetbrains-mono-v24-latin-regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/_/fonts/jetbrains-mono-v24-latin-600.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+
+:root {
+  --bg: #fdfaf4;
+  --fg: #2c2a26;
+  --dim: #7a746a;
+  --accent: #b3611f;
+  --accent-2: #1f6f50;
+  --line: #e4ddd0;
+  --pre-bg: #f4efe4;
+  --sel: #ffd9a8;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12130f;
+    --fg: #d8d4c8;
+    --dim: #8a857a;
+    --accent: #ffb454;
+    --accent-2: #7fd6a4;
+    --line: #2a2b24;
+    --pre-bg: #1a1b16;
+    --sel: #4a3a1a;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+::selection { background: var(--sel); }
+
+main {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 4rem;
+}
+
+h1, h2, h3 {
+  line-height: 1.25;
+  font-weight: 600;
+  margin: 2.2em 0 0.6em;
+}
+h1:first-child, .banner + h1 { margin-top: 0.5em; }
+h1 { font-size: 1.55rem; }
+h2 { font-size: 1.2rem; }
+h3 { font-size: 1.05rem; }
+
+h1::before { content: "# ";  color: var(--accent); }
+h2::before { content: "## "; color: var(--accent); }
+h3::before { content: "### "; color: var(--accent); }
+
+p { margin: 0.9em 0; }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* gemtext link lines get an arrow gutter */
+p.lnk { margin: 0.28em 0; padding-left: 1.6em; text-indent: -1.6em; }
+p.lnk::before { content: "⇒ "; color: var(--dim); }
+p.lnk a.ext::after { content: " ↗"; color: var(--dim); font-size: 0.85em; }
+p.lnk a.gem { color: var(--accent-2); }
+p.lnk a.gem::after { content: " ♊"; color: var(--dim); font-size: 0.85em; }
+
+p.img { margin: 1.2em 0; }
+img { max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 4px; }
+
+ul, ol { padding-left: 1.4em; margin: 0.9em 0; }
+li { margin: 0.25em 0; }
+li::marker { color: var(--accent); }
+
+blockquote {
+  margin: 1em 0;
+  padding: 0.1em 1em;
+  border-left: 3px solid var(--accent);
+  color: var(--dim);
+  background: var(--pre-bg);
+}
+blockquote p { margin: 0.5em 0; }
+
+pre {
+  background: var(--pre-bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.9em 1.1em;
+  overflow-x: auto;
+  line-height: 1.45;
+  font-size: 0.88em;
+}
+code {
+  background: var(--pre-bg);
+  border-radius: 3px;
+  padding: 0.1em 0.35em;
+  font-size: 0.92em;
+}
+pre code { background: none; padding: 0; font-size: 1em; }
+
+hr { border: none; border-top: 1px dashed var(--line); margin: 2em 0; }
+
+/* emoji: rendered monochrome to match the terminal aesthetic */
+.e { filter: grayscale(1) contrast(1.05); opacity: 0.75; }
+
+table { border-collapse: collapse; margin: 1em 0; display: block; overflow-x: auto; }
+th, td { border: 1px solid var(--line); padding: 0.35em 0.7em; text-align: left; }
+th { background: var(--pre-bg); }
+
+/* the ASCII banner block */
+pre.banner, pre[title="banner"] {
+  background: none;
+  border: none;
+  color: var(--accent);
+  padding: 0;
+  margin: 0 0 0.5em;
+  font-size: clamp(6.5px, 1.9vw, 13px);
+  line-height: 1.2;
+}
+
+/* search */
+form.search { display: flex; gap: 0.5em; margin: 1.2em 0; }
+form.search input[type="text"] {
+  flex: 1;
+  font: inherit;
+  color: var(--fg);
+  background: var(--pre-bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.45em 0.8em;
+}
+form.search input[type="text"]:focus { outline: 2px solid var(--accent); border-color: transparent; }
+form.search button {
+  font: inherit;
+  font-weight: 600;
+  color: var(--bg);
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  padding: 0.45em 1.1em;
+  cursor: pointer;
+}
+
+.hit { margin: 1.1em 0; }
+.hit .snip { color: var(--dim); font-size: 0.9em; margin: 0.15em 0 0; }
+.hit .date { color: var(--dim); }
+
+footer.site {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 0 1.25rem 2.5rem;
+  color: var(--dim);
+  font-size: 0.85em;
+}
+footer.site a { color: var(--dim); text-decoration: underline; text-underline-offset: 3px; }
+
+/* ---- starpulse admin chrome (still no JS) ---- */
+
+a.edit-link {
+  color: var(--dim);
+  font-size: 0.85em;
+  text-decoration: none;
+  opacity: 0.6;
+}
+a.edit-link:hover { opacity: 1; color: var(--accent); }
+
+form.admin { margin: 1.2em 0; }
+form.admin label { display: block; margin: 0.8em 0 0.25em; color: var(--dim); font-size: 0.9em; }
+form.admin input[type="text"],
+form.admin input[type="password"],
+form.admin input[type="file"],
+form.admin textarea {
+  width: 100%;
+  font: inherit;
+  color: var(--fg);
+  background: var(--pre-bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.45em 0.8em;
+}
+form.admin textarea {
+  min-height: 24em;
+  line-height: 1.5;
+  font-size: 0.92em;
+  resize: vertical;
+  white-space: pre;
+}
+form.admin input:focus, form.admin textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
+
+.btn, form.admin button, form.inline button {
+  font: inherit;
+  font-weight: 600;
+  color: var(--bg);
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  padding: 0.45em 1.1em;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+.btn.danger, form.inline button.danger { background: #b3402a; color: #fff; }
+.btn.quiet, form.inline button.quiet { background: var(--pre-bg); color: var(--fg); border: 1px solid var(--line); }
+form.inline { display: inline; }
+.bar { display: flex; gap: 0.6em; align-items: center; flex-wrap: wrap; margin: 1em 0; }
+
+table.admin { width: 100%; font-size: 0.9em; }
+table.admin td, table.admin th { border: none; border-bottom: 1px solid var(--line); }
+table.admin tr:hover td { background: var(--pre-bg); }
+.dim { color: var(--dim); }
+.right { text-align: right; }
+
+.flash {
+  border: 1px solid var(--accent-2);
+  border-radius: 6px;
+  color: var(--accent-2);
+  padding: 0.5em 0.9em;
+  margin: 1em 0;
+}
+.flash.err { border-color: #b3402a; color: #b3402a; }
