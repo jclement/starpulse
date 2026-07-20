@@ -80,6 +80,7 @@ func (s *Server) folderScreen(b *strings.Builder, metas []store.Meta, dir string
 		files = append(files, m)
 	}
 	sort.Strings(subs)
+	s.sortFiles(files, dir)
 
 	if dir != "/" {
 		s.folderSettings(b, dir)
@@ -108,6 +109,37 @@ func (s *Server) folderScreen(b *strings.Builder, metas []store.Meta, dir string
 	b.WriteString("</table>\n")
 
 	fmt.Fprintf(b, `<p class="newhere">%s</p>`+"\n", newLink(dir))
+}
+
+// sortFiles puts a folder's machinery first — dot-files, then index.gmi —
+// and its content after. In a folder that publishes, the content is a
+// chronology, so it reads newest-first the way the feed and the listing do;
+// everywhere else a name is all there is to sort on.
+func (s *Server) sortFiles(files []store.Meta, dir string) {
+	byDate := s.Store.IsFeedFolder(dir)
+	rank := func(p string) int {
+		switch {
+		case store.Hidden(p):
+			return 0
+		case strings.HasSuffix(p, "/index.gmi"):
+			return 1
+		}
+		return 2
+	}
+	sort.SliceStable(files, func(i, j int) bool {
+		ri, rj := rank(files[i].Path), rank(files[j].Path)
+		if ri != rj {
+			return ri < rj
+		}
+		if ri == 2 && byDate {
+			di := s.Store.EffectiveDate(files[i], true)
+			dj := s.Store.EffectiveDate(files[j], true)
+			if di != dj {
+				return di > dj // newest first
+			}
+		}
+		return files[i].Path < files[j].Path
+	})
 }
 
 // fileRow is one page: its name links to the editor, which is where history

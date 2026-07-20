@@ -420,6 +420,50 @@ func TestPrefixToggleEditsOnlyItsLine(t *testing.T) {
 
 // The preview must show what the saved page will look like — not the raw
 // source. Front matter is the case that gave it away.
+func TestFolderFileOrder(t *testing.T) {
+	_, st, ts := testServer(t)
+	// a folder that publishes: machinery first, then newest entry first
+	_, _ = st.SavePage("/posts/"+store.FeedMarker, []byte("title: Posts"), "", "t")
+	_, _ = st.SavePage("/posts/.header", []byte("hi"), "", "t")
+	_, _ = st.SavePage("/posts/index.gmi", []byte("# Posts"), "", "t")
+	_, _ = st.SavePage("/posts/2026-01-05-alpha.gmi", []byte("# Alpha"), "", "t")
+	_, _ = st.SavePage("/posts/2026-07-02-zulu.gmi", []byte("# Zulu"), "", "t")
+	_, _ = st.SavePage("/posts/2026-03-11-mike.gmi", []byte("# Mike"), "", "t")
+	// an ordinary folder stays alphabetical: undated pages have no chronology
+	_, _ = st.SavePage("/docs/zebra.gmi", []byte("# Z"), "", "t")
+	_, _ = st.SavePage("/docs/index.gmi", []byte("# Docs"), "", "t")
+	_, _ = st.SavePage("/docs/apple.gmi", []byte("# A"), "", "t")
+	client := login(t, ts, testPassword)
+
+	order := func(dir string) []string {
+		resp, _ := client.Get(ts.URL + "/admin?dir=" + url.QueryEscape(dir))
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		body := string(b)
+		if i := strings.Index(body, `<script id="page-index"`); i > 0 {
+			body = body[:i] // the inline index lists every page; ignore it
+		}
+		var out []string
+		for _, m := range regexp.MustCompile(`<tr class="page-row[^"]*"><td><a href="/admin/edit\?path=([^"]+)"`).FindAllStringSubmatch(body, -1) {
+			p, _ := url.QueryUnescape(m[1])
+			out = append(out, strings.TrimPrefix(p, dir))
+		}
+		return out
+	}
+
+	got := order("/posts/")
+	want := []string{".feed", ".header", "index.gmi", "2026-07-02-zulu.gmi", "2026-03-11-mike.gmi", "2026-01-05-alpha.gmi"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("feed folder order:\n got %v\nwant %v", got, want)
+	}
+
+	got = order("/docs/")
+	want = []string{"index.gmi", "apple.gmi", "zebra.gmi"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("plain folder order:\n got %v\nwant %v", got, want)
+	}
+}
+
 func TestPreviewAssemblesLikeThePage(t *testing.T) {
 	_, st, ts := testServer(t)
 	_, _ = st.SavePage("/.header", []byte("=> / home"), "", "t")
