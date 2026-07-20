@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -70,32 +71,49 @@ func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
 	b.WriteString(`<p id="filter-count" class="dim" hidden></p>` + "\n")
 	b.WriteString(`<table class="admin" id="pages-table"><thead><tr><th>path</th><th>title</th><th class="right">size</th><th>updated</th><th></th></tr></thead>` + "\n")
 
-	curFolder := "\x00"
+	// bucket by folder first — a flat path sort interleaves subfolder pages
+	// with root pages (/posts/… sorts between /now.gmi and /projects.gmi),
+	// which would split a folder into several groups.
+	byFolder := map[string][]store.Meta{}
+	var folders []string
 	for _, m := range metas {
-		folder := pageFolder(m.Path)
-		if folder != curFolder {
-			curFolder = folder
-			label := folder
-			if label == "/" {
-				label = "/ (root)"
-			}
-			fmt.Fprintf(&b, `<tbody class="folder-group" data-folder="%s"><tr class="folder-row"><td colspan="5">%s</td></tr>`+"\n",
-				html.EscapeString(strings.ToLower(folder)), html.EscapeString(label))
+		f := pageFolder(m.Path)
+		if _, seen := byFolder[f]; !seen {
+			folders = append(folders, f)
 		}
-		title := m.Title
-		view := ""
-		if !m.Binary && !store.Hidden(m.Path) && strings.HasSuffix(m.Path, ".gmi") {
-			view = fmt.Sprintf(` <a href="%s">view</a>`, html.EscapeString(pageURL(m.Path)))
-		} else if m.Binary || !store.Hidden(m.Path) {
-			view = fmt.Sprintf(` <a href="%s">view</a>`, html.EscapeString(m.Path))
-		}
-		fmt.Fprintf(&b, `<tr class="page-row" data-key="%s"><td><a href="/admin/edit?path=%s">%s</a></td><td>%s</td><td class="right dim">%s</td><td class="dim">%s</td><td class="dim">%s · <a href="/admin/versions?path=%s">history</a></td></tr>`+"\n",
-			html.EscapeString(strings.ToLower(m.Path+" "+title)),
-			url.QueryEscape(m.Path), html.EscapeString(m.Path), html.EscapeString(title),
-			sizeStr(m.Size), m.Updated.In(s.loc()).Format("2006-01-02 15:04"), view, url.QueryEscape(m.Path))
+		byFolder[f] = append(byFolder[f], m)
 	}
-	if curFolder != "\x00" {
-		b.WriteString("</tbody>")
+	sort.Slice(folders, func(i, j int) bool {
+		if (folders[i] == "/") != (folders[j] == "/") {
+			return folders[i] == "/" // root first
+		}
+		return folders[i] < folders[j]
+	})
+
+	for _, folder := range folders {
+		rows := byFolder[folder]
+		label := folder
+		if label == "/" {
+			label = "/ (root)"
+		}
+		fmt.Fprintf(&b, `<tbody class="folder-group" data-folder="%s"><tr class="folder-row"><td colspan="5">%s <span class="dim">%d</span></td></tr>`+"\n",
+			html.EscapeString(strings.ToLower(folder)), html.EscapeString(label), len(rows))
+		for _, m := range rows {
+			title := m.Title
+			view := ""
+			if !m.Binary && !store.Hidden(m.Path) && strings.HasSuffix(m.Path, ".gmi") {
+				view = fmt.Sprintf(`<a href="%s">view</a> · `, html.EscapeString(pageURL(m.Path)))
+			} else if m.Binary || !store.Hidden(m.Path) {
+				view = fmt.Sprintf(`<a href="%s">view</a> · `, html.EscapeString(m.Path))
+			}
+			// show just the file name in the folder view; full path on hover
+			name := m.Path[len(folder):]
+			fmt.Fprintf(&b, `<tr class="page-row" data-key="%s"><td><a href="/admin/edit?path=%s" title="%s">%s</a></td><td>%s</td><td class="right dim">%s</td><td class="dim">%s</td><td class="dim">%s<a href="/admin/versions?path=%s">history</a></td></tr>`+"\n",
+				html.EscapeString(strings.ToLower(m.Path+" "+title)),
+				url.QueryEscape(m.Path), html.EscapeString(m.Path), html.EscapeString(name), html.EscapeString(title),
+				sizeStr(m.Size), m.Updated.In(s.loc()).Format("2006-01-02 15:04"), view, url.QueryEscape(m.Path))
+		}
+		b.WriteString("</tbody>\n")
 	}
 	b.WriteString("</table>\n")
 	b.WriteString(`<p class="dim">Special files: <code>.header</code> and <code>.footer</code> (gemtext, inherited down folders), <code>.theme</code> (CSS, inherited down folders). Create them like any page, e.g. <code>/posts/.header</code>.</p>`)

@@ -150,6 +150,9 @@ func TestAdminFolderGroupingAndFilter(t *testing.T) {
 	_, _ = st.SavePage("/index.gmi", []byte("# Home"), "", "t")
 	_, _ = st.SavePage("/posts/a.gmi", []byte("# Post A"), "", "t")
 	_, _ = st.SavePage("/posts/b.gmi", []byte("# Post B"), "", "t")
+	// these bracket /posts/ alphabetically — the exact interleaving trap
+	_, _ = st.SavePage("/now.gmi", []byte("# Now"), "", "t")
+	_, _ = st.SavePage("/projects.gmi", []byte("# Projects"), "", "t")
 	client := login(t, ts, testPassword)
 	resp, err := client.Get(ts.URL + "/admin")
 	if err != nil {
@@ -163,10 +166,30 @@ func TestAdminFolderGroupingAndFilter(t *testing.T) {
 		`id="page-filter"`,
 		`class="folder-group" data-folder="/posts/"`,
 		`class="page-row" data-key="/posts/a.gmi post a"`,
-		`page-filter`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("admin list missing %q", want)
+		}
+	}
+	// each folder must appear EXACTLY once, even though a flat path sort
+	// interleaves /posts/* between /now.gmi and /projects.gmi
+	if n := strings.Count(body, `data-folder="/"`); n != 1 {
+		t.Errorf("root folder group appears %d times, want 1", n)
+	}
+	if n := strings.Count(body, `data-folder="/posts/"`); n != 1 {
+		t.Errorf("posts folder group appears %d times, want 1", n)
+	}
+	// root group must come before the posts group, and contain BOTH the
+	// alphabetically-before and alphabetically-after root pages
+	rootAt := strings.Index(body, `data-folder="/"`)
+	postsAt := strings.Index(body, `data-folder="/posts/"`)
+	if rootAt > postsAt {
+		t.Error("root folder should sort first")
+	}
+	rootSection := body[rootAt:postsAt]
+	for _, want := range []string{"/now.gmi", "/projects.gmi"} {
+		if !strings.Contains(rootSection, want) {
+			t.Errorf("root group missing %s — folder bucketing is split", want)
 		}
 	}
 }
