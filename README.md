@@ -144,7 +144,7 @@ highlight:
 feeds:
   author: "Your Name"
   limit: 30
-  now:                          # publish now-posts as a feed
+  now:                          # publish the notes folder as a feed
     enabled: false
     path: /now/feed.xml
     page: /now
@@ -177,8 +177,8 @@ automatically, so you cannot accidentally create an unviewable file.
 | `{{list [folder] [limit]}}` | link list of a folder's pages |
 | `{{include /path}}` | another page's content, inline |
 | `{{stream [folder] [limit]}}` | a folder's entries in full, newest first |
-| `{{latest [folder] [body\|link\|title\|date]}}` | one part of a folder's newest entry |
-| `{{now [limit]}}` / `{{latest_now}}` | the same, for the configured notes folder |
+| `{{latest [folder] [body\|link\|title\|date]}}` | one part of a folder's newest entry, inline; folder defaults to `now_folder`, part to `body` |
+| `{{now [limit]}}` | `{{stream}}` over the folder named by `now_folder` |
 | `{{random /path}}` | one random line from a file |
 | `{{count}}` | this page's view counter |
 | `{{rev}}` | this page's revision number |
@@ -260,7 +260,7 @@ the `key: value` special files — hand-rolled, no editor library.
   you are served each page's **raw source**, so an edit round-trips exactly
   instead of baking in inherited headers and expanded directives. A zero-byte
   upload deletes.
-- **SSH**: `ssh admin@host` → `e` edit, `c` new page, `n` now-post, `x` delete,
+- **SSH**: `ssh admin@host` → `e` edit, `c` new page, `n` note, `x` delete,
   `ctrl+s` save, `ctrl+g` syntax help, `g` fuzzy page jump, `/` search.
 - **REST**: `Authorization: Bearer <admin_password>` against `/api/pages`,
   `/api/now`, `/api/search`, `/api/versions`, `/api/stats`.

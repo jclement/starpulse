@@ -418,6 +418,52 @@ func TestPrefixToggleEditsOnlyItsLine(t *testing.T) {
 	}
 }
 
+// The preview must show what the saved page will look like — not the raw
+// source. Front matter is the case that gave it away.
+func TestPreviewAssemblesLikeThePage(t *testing.T) {
+	_, st, ts := testServer(t)
+	_, _ = st.SavePage("/.header", []byte("=> / home"), "", "t")
+	_, _ = st.SavePage("/posts/2026-01-01-old.gmi", []byte("# Old"), "", "t")
+	client := login(t, ts, testPassword)
+
+	draft := "---\ntitle: Draft\n---\n# Real Heading\n\n{{list /posts}}\n"
+	resp, err := client.Post(ts.URL+"/api/preview?path="+url.QueryEscape("/posts/new.gmi"),
+		"text/plain", strings.NewReader(draft))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	got := string(b)
+	if strings.Contains(got, "---") || strings.Contains(got, "title: Draft") {
+		t.Errorf("front matter leaked into the preview:\n%s", got)
+	}
+	if !strings.Contains(got, "Real Heading") {
+		t.Errorf("body missing:\n%s", got)
+	}
+	if !strings.Contains(got, "home") {
+		t.Errorf("inherited .header missing:\n%s", got)
+	}
+	if !strings.Contains(got, "Old") || strings.Contains(got, "{{list") {
+		t.Errorf("directives not expanded:\n%s", got)
+	}
+	// front matter can still switch the header off, as on a real page
+	resp2, _ := client.Post(ts.URL+"/api/preview?path="+url.QueryEscape("/posts/new.gmi"),
+		"text/plain", strings.NewReader("---\nheader: none\n---\n# Bare\n"))
+	b2, _ := io.ReadAll(resp2.Body)
+	resp2.Body.Close()
+	if strings.Contains(string(b2), "home") {
+		t.Errorf("header: none ignored in preview:\n%s", string(b2))
+	}
+	// previewing a brand-new page in a folder that does not exist must not panic
+	resp3, _ := client.Post(ts.URL+"/api/preview?path="+url.QueryEscape("/brand/new/thing.gmi"),
+		"text/plain", strings.NewReader("# Hi\n"))
+	if resp3.StatusCode != 200 {
+		t.Errorf("preview of an unsaved page: %d", resp3.StatusCode)
+	}
+	resp3.Body.Close()
+}
+
 func TestFeedToggle(t *testing.T) {
 	_, st, ts := testServer(t)
 	_, _ = st.SavePage("/journal/index.gmi", []byte("# Field Notes"), "", "t")
@@ -522,7 +568,7 @@ func TestAdminManual(t *testing.T) {
 	r3, _ := c2.Get(ts2.URL + "/admin/edit?path=/index.gmi")
 	b3, _ := io.ReadAll(r3.Body)
 	r3.Body.Close()
-	if !strings.Contains(string(b3), "{{latest_now}}") || !strings.Contains(string(b2), "{{latest_now}}") {
+	if !strings.Contains(string(b3), "{{stream [folder] [limit]}}") || !strings.Contains(string(b2), "{{stream [folder] [limit]}}") {
 		t.Error("syntax reference not shared between editor and manual")
 	}
 }

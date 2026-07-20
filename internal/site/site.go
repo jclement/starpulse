@@ -55,7 +55,7 @@ type Site struct {
 	Store *store.Store
 	// Loc is the timezone for displayed timestamps (nil = server local).
 	Loc *time.Location
-	// NowFolder is the stream {{now}} and {{latest_now}} read from.
+	// NowFolder is the folder {{now}} and a bare {{latest}} read from.
 	NowFolder string
 }
 
@@ -247,6 +247,39 @@ func (s *Site) pageResult(urlPath string, pg *store.Page, proto string) *Result 
 	}}
 }
 
+// Preview assembles unsaved editor content exactly as pageResult would if it
+// were saved at storePath: front matter stripped, directives expanded, and
+// the inherited .header/.footer wrapped around it. Rendering the raw source
+// instead made a page with front matter preview its own "---" lines, which
+// is precisely the thing a preview is supposed to rule out.
+//
+// It never records a hit, and it reads the *saved* page only for {{rev}} and
+// {{updated}}, which describe the last save by definition.
+func (s *Site) Preview(storePath, src string) string {
+	if storePath == "" {
+		storePath = "/preview.gmi"
+	}
+	urlPath := strings.TrimSuffix(storePath, ".gmi")
+	if urlPath == "" {
+		urlPath = "/"
+	}
+	body, fm := stripFrontMatter(src)
+	baseDir := path.Dir(storePath)
+
+	pg, _ := s.Store.GetPage(storePath) // nil for a page that does not exist yet
+	ctx := expandCtx{urlPath: urlPath, page: pg}
+
+	var parts []string
+	if h := s.nearestSpecial(storePath, ".header"); h != "" && !fm.NoHeader {
+		parts = append(parts, s.expand(h, path.Dir(storePath), ctx, 0))
+	}
+	parts = append(parts, s.expand(body, baseDir, ctx, 0))
+	if f := s.nearestSpecial(storePath, ".footer"); f != "" && !fm.NoFooter {
+		parts = append(parts, s.expand(f, path.Dir(storePath), ctx, 0))
+	}
+	return joinChunks(parts)
+}
+
 func joinChunks(parts []string) string {
 	var b strings.Builder
 	for i, p := range parts {
@@ -349,15 +382,16 @@ func (s *Site) expand(body, baseDir string, ctx expandCtx, depth int) string {
 	if strings.Contains(body, "{{count}}") {
 		body = strings.ReplaceAll(body, "{{count}}", fmt.Sprintf("%d", s.Store.Count(canonicalKey(ctx.urlPath))))
 	}
-	// {{latest_now}} / {{latest_now_date}} are the now-folder shorthands
-	if strings.Contains(body, "{{latest_now") {
-		body = strings.ReplaceAll(body, "{{latest_now_date}}", s.latest(s.nowFolder(), "date"))
-		body = strings.ReplaceAll(body, "{{latest_now}}", s.latest(s.nowFolder(), "body"))
-	}
 	if strings.Contains(body, "{{latest") {
 		body = latestRe.ReplaceAllStringFunc(body, func(m string) string {
 			g := latestRe.FindStringSubmatch(m)
 			folder, part := g[1], g[2]
+			// one bare word that names a part is a part, not a folder:
+			// {{latest date}} means the default folder's newest date. The
+			// four part names are reserved; a folder is a path.
+			if part == "" && isLatestPart(folder) {
+				folder, part = "", folder
+			}
 			if folder == "" {
 				folder = s.nowFolder()
 			} else if !strings.HasPrefix(folder, "/") {
@@ -451,6 +485,15 @@ func (s *Site) updatedString(ctx expandCtx) string {
 		return ctx.page.Updated.In(s.loc()).Format("2006-01-02")
 	}
 	return "recently"
+}
+
+// isLatestPart reports whether a bare {{latest X}} argument names a part.
+func isLatestPart(s string) bool {
+	switch s {
+	case "body", "link", "title", "date":
+		return true
+	}
+	return false
 }
 
 // latest renders one part of a folder's newest entry.

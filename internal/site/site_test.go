@@ -256,7 +256,7 @@ func timeNowDate() string {
 // {{latest}} generalises to any folder, and picks out one part of the entry.
 func TestLatestDirective(t *testing.T) {
 	sy, st := testSite(t)
-	save(t, st, "/a.gmi", "# A\n\nlatest: {{latest_now}} on {{latest_now_date}}!")
+	save(t, st, "/a.gmi", "# A\n\nlatest: {{latest}} on {{latest date}}!")
 	g := sy.Resolve("/a", "").Page.Gemtext
 	if !strings.Contains(g, "latest:  on !") {
 		t.Errorf("empty stream should render empty, not error:\n%s", g)
@@ -268,7 +268,7 @@ func TestLatestDirective(t *testing.T) {
 
 	g = sy.Resolve("/a", "").Page.Gemtext
 	if !strings.Contains(g, "latest: the newest note on 2026-07-20!") {
-		t.Errorf("latest_now wrong:\n%s", g)
+		t.Errorf("bare {{latest}} wrong:\n%s", g)
 	}
 	if strings.Contains(g, "older note") {
 		t.Errorf("latest leaked an older entry:\n%s", g)

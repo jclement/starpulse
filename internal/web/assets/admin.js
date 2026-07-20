@@ -101,7 +101,7 @@
   });
 
   function renderPreview() {
-    fetch("/api/preview", { method: "POST", body: ta.value })
+    fetch("/api/preview?path=" + encodeURIComponent(pathInput.value.trim()), { method: "POST", body: ta.value })
       .then(function (r) { return r.ok ? r.text() : Promise.reject(new Error("HTTP " + r.status)); })
       .then(function (html) { preview.innerHTML = html; })
       .catch(function () {});

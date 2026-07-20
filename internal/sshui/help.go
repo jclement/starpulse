@@ -24,7 +24,7 @@ func helpDoc(admin bool) string {
 
 * e — edit the current page's source
 * c — create a new page
-* n — publish a now-post (rendered by any page containing {{now}})
+* n — post a note into the notes folder (shown by {{now}} or {{latest}})
 * x — delete the current page (confirms; restorable from web history)
 
 In the editor: ctrl+s saves (a version is kept), ctrl+g shows this help, esc backs out (twice discards unsaved changes).
@@ -46,8 +46,10 @@ Lines are the unit — no inline markup.
 
 * {{list [folder] [limit]}} — link list of a folder's pages, dated first, newest first
 * {{include /path}} — another page's content, inline
-* {{now [limit]}} — latest now-posts (0 = all)
-* {{latest_now}} / {{latest_now_date}} — just the newest now-post's text / date (inline)
+* {{stream [folder] [limit]}} — a folder's entries in full, newest first (0 = all)
+* {{now [limit]}} — the same, for the notes folder (default 5)
+* {{latest [folder] [part]}} — one piece of a folder's newest entry, inline;
+  part is body (default), title, date or link
 * {{random /path}} — one random non-empty line from a file
 * {{count}} — the page's view counter
 * {{rev}} — the page's revision number

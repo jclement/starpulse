@@ -40,7 +40,7 @@ type Feed struct {
 	// Path is the URL the feed is served at, e.g. "/feed.xml".
 	Path string `yaml:"path"`
 	// Source is a folder of dated pages ("/posts/"), "/" for the whole
-	// site, or the literal "now" for the now-post stream.
+	// site, or the literal "now" for the notes folder.
 	Source string `yaml:"source"`
 	// Page is the human-readable page this feed represents (used for the
 	// alternate link and the feed id). Defaults to Source, or "/".
@@ -121,7 +121,7 @@ type Config struct {
 	NowFolder string `yaml:"now_folder"`
 
 	// Timezone is an IANA zone name (e.g. "America/Edmonton") used when
-	// rendering timestamps (now-posts, {{updated}}, admin displays).
+	// rendering timestamps (notes, {{updated}}, admin displays).
 	// Empty = the server's local time.
 	Timezone string `yaml:"timezone"`
 
@@ -391,7 +391,7 @@ tor:
 
 # Atom feeds. Folders publish a feed when you turn one on in the admin (it
 # writes a .feed file there); these entries are for anything else — the
-# now-post stream, or a site-wide feed. On gemini the idiomatic feed is just
+# notes folder, or a site-wide feed. On gemini the idiomatic feed is just
 # a page of dated link lines, which {{list}} already emits.
 feeds:
   author: ""
@@ -410,7 +410,7 @@ highlight:
   style: github
   dark_style: github-dark
 
-# IANA timezone for displayed timestamps (now-posts, {{updated}}, admin).
+# IANA timezone for displayed timestamps (notes, {{updated}}, admin).
 # Empty = server local time.
 timezone: ""
 

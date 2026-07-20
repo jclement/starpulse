@@ -299,8 +299,11 @@ func (s *Server) apiPreview(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadRequest, "bad body")
 		return
 	}
+	// the editor posts the path too, so the preview can resolve the same
+	// .header/.footer and relative directives the saved page would
+	gmi := s.Site.Preview(r.URL.Query().Get("path"), string(body))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, wrapEmoji(render.GemtextToHTMLOpts(string(body), s.renderOpts())))
+	fmt.Fprint(w, wrapEmoji(render.GemtextToHTMLOpts(gmi, s.renderOpts())))
 }
 
 func orEmpty[T any](v []T) []T {
