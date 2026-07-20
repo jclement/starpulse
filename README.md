@@ -1,61 +1,52 @@
 # ✨ starpulse
 
-A single-binary smolweb CMS. One SQLite file, four doors in:
+A single-binary smolweb CMS. One SQLite file, five doors in:
 
-- **gemini://** (with **titan://** editing via client certificates)
-- **http://** and **https://** (automatic Let's Encrypt)
-- **ssh** — a full TUI gemini browser in your terminal (`ssh guest@host`),
-  with a pico-style full-screen editor when you log in as `admin`
-- **telnet** — the same TUI browser, read-only, over honest-to-goodness
-  telnet (`telnet host`) — BBS nostalgia included
-- **tor** hidden service (managed automatically — every enabled door gets an
-  onion port: web, gemini, ssh, and telnet)
+| door | what you get |
+|---|---|
+| **https / http** | the site as HTML, with automatic Let's Encrypt certificates |
+| **gemini** | the same pages as gemtext, plus **titan** editing from a gemini client |
+| **ssh** | a full TUI browser in your terminal — and a pico-style editor when you log in as `admin` |
+| **telnet** | the same TUI browser, read-only. BBS nostalgia included |
+| **tor** | a hidden service mirroring *every* enabled door |
 
-Content is [gemtext](https://geminiprotocol.net/docs/gemtext.gmi), authored in a
-no-frills web admin, over titan, or through the built-in **REST API** and
-**MCP server** (point Claude or any MCP client at `/mcp` and edit your site
-conversationally). The public site ships **zero JavaScript**; the admin editor
-uses a sprinkle for live preview, and degrades cleanly without it.
+Content is [gemtext](https://geminiprotocol.net/docs/gemtext.gmi), written in a
+no-frills web admin, over titan, in the SSH editor, or through the built-in
+**REST API** and **MCP server** — point Claude at `/mcp` and edit your capsule
+by asking. The public site ships **zero JavaScript**, syntax highlighting
+included; the admin uses a little, and degrades without it.
 
-Pure Go, `CGO_ENABLED=0`, cross-compiles everywhere.
+Pure Go, `CGO_ENABLED=0`, no external database, cross-compiles everywhere.
 
-## Quick start
+---
 
-```sh
-STARPULSE_ADMIN_PASSWORD=changeme STARPULSE_HTTP_ADDR=:8080 starpulse serve
-```
+## Install
 
-Browse http://localhost:8080 — a starter site is seeded on first run.
-Log in at `/login`, then use the ✎ link in any page footer.
-
-### Install as a service (Linux)
+### Linux, as a service
 
 ```sh
-sudo starpulse install --hostname example.org
+curl -L https://github.com/jclement/starpulse/releases/latest/download/starpulse_linux_amd64.tar.gz | tar xz
+sudo ./starpulse install --hostname example.org
 ```
 
-```
-starpulse serve          run the server
-starpulse status         service health, per-protocol view graphs, top pages
-starpulse doctor         config / TLS / DNS / tor connectivity checks
-starpulse install        set up as a hardened systemd service (Linux, root)
-starpulse uninstall      remove it (prompts before touching data)
-starpulse self-update    update from the latest GitHub release
-starpulse import <dir>   import a file-tree site into the database
-starpulse hash-password  bcrypt-hash a password for config.yaml
-```
+Installs the binary to `/opt/starpulse`, writes `/etc/starpulse/config.yaml`
+with a generated admin password (printed once), puts data in
+`/var/lib/starpulse`, and registers a hardened systemd unit running as a
+dedicated non-root user with `CAP_NET_BIND_SERVICE` only — so it binds :80,
+:443 and :1965 without ever being root.
 
-Installs to `/opt/starpulse`, writes a sample config to
-`/etc/starpulse/config.yaml` (with a generated admin password), stores data in
-`/var/lib/starpulse`, and registers a hardened systemd unit that runs as a
-dedicated non-root user (`CAP_NET_BIND_SERVICE` only). `sudo starpulse
-uninstall` undoes it (prompting before touching your data);
-`sudo starpulse self-update` pulls the latest GitHub release.
+```sh
+systemctl status starpulse     # is it up
+journalctl -u starpulse -f     # what is it doing
+sudo starpulse self-update     # pull the latest release
+sudo starpulse uninstall       # undo (prompts before touching your data)
+```
 
 ### Docker
 
 ```sh
-docker run -d -p 80:80 -p 443:443 -p 1965:1965 \
+docker run -d --name starpulse \
+  -p 80:80 -p 443:443 -p 1965:1965 \
   -e STARPULSE_HOSTNAME=example.org \
   -e STARPULSE_ADMIN_PASSWORD=changeme \
   -e STARPULSE_HTTPS=true \
@@ -63,137 +54,143 @@ docker run -d -p 80:80 -p 443:443 -p 1965:1965 \
   ghcr.io/jclement/starpulse:latest
 ```
 
+### Try it locally
+
+```sh
+STARPULSE_ADMIN_PASSWORD=dev STARPULSE_HTTP_ADDR=:8080 starpulse serve
+```
+
+Browse <http://localhost:8080> — a starter site is seeded on first run. Log in
+at `/login`, then use the ✎ link in any page footer. **`/admin/manual` is a
+built-in manual describing your own running site**, listing only the doors you
+actually have switched on.
+
+---
+
+## Commands
+
+```
+starpulse serve          run the server (default)
+starpulse status         health, per-door view graphs, top pages
+starpulse doctor         config / TLS / DNS / tor connectivity checks
+starpulse install        set up as a systemd service (Linux, root)
+starpulse uninstall      remove it
+starpulse self-update    update from the latest GitHub release
+starpulse import <dir>   import a directory of files into the database
+starpulse hash-password  bcrypt-hash a password for config.yaml
+starpulse version
+```
+
+---
+
+## Features
+
+- **One binary, one file.** Pages, uploads, version history, view counts and
+  the search index all live in `starpulse.sqlite`.
+- **Versioned everything.** Every save keeps the previous content — deletes and
+  renames too — so nothing is unrecoverable. A rename carries a page's history
+  and view counts with it.
+- **Full-text search** (SQLite FTS5) on the web, over gemini, and in the TUI.
+- **Per-door statistics**: which pages, and whether they were read over http,
+  gemini, ssh, telnet or tor.
+- **Now-posts**: short timestamped updates, posted from anywhere, rendered
+  wherever you put `{{now}}`.
+- **Syntax highlighting** for code blocks, rendered server-side.
+- **Automatic HTTPS**, and a **self-managed tor hidden service** forwarding
+  every door you enable.
+- **Five ways to edit**: web, titan, SSH, REST, MCP.
+
+---
+
 ## Configuration
 
 `config.yaml` is looked for at `$STARPULSE_CONFIG`,
-`~/.config/starpulse/config.yaml`, then `/etc/starpulse/config.yaml`.
-Every key has a `STARPULSE_*` environment override.
+`~/.config/starpulse/config.yaml`, then `/etc/starpulse/config.yaml`. Every key
+has a `STARPULSE_*` environment override.
 
 ```yaml
 hostname: example.org
-admin_password: "changeme"     # or a bcrypt hash from `starpulse hash-password`
+admin_password: "changeme"      # or a bcrypt hash from `starpulse hash-password`
 data_dir: /var/lib/starpulse
+timezone: "America/Edmonton"    # IANA zone for displayed timestamps
 
 gemini: { enabled: true, addr: ":1965" }
 http:   { enabled: true, addr: ":80" }
 https:  { enabled: true, addr: ":443", acme: true, acme_email: "you@example.org" }
+
+ssh:
+  enabled: true
+  addr: ":22"
+  authorized_keys:              # when set, admin password auth over SSH is
+    - "ssh-ed25519 AAAA... you" # disabled entirely — keys only
+telnet:
+  enabled: true
+  addr: ":23"
 
 titan:
   enabled: true
   cert_fingerprints: ["<sha256 of your client cert>"]
 
 tor:
-  enabled: true                # runs a private tor; every enabled door is
-                               # forwarded (onion:80/1965/22/23)
-  # onion: xyz.onion           # or point at an externally-managed hidden service
+  enabled: true                 # runs its own tor, forwards every enabled door
+  # onion: xyz.onion            # or point at an externally managed service
 
-timezone: "America/Edmonton"  # IANA zone for displayed timestamps (empty = server local)
+highlight:
+  enabled: true
+  style: github
+  dark_style: github-dark
+
+feeds:
+  author: "Your Name"
+  limit: 30
+  now:                          # publish now-posts as a feed
+    enabled: false
+    path: /now/feed.xml
+    page: /now
+  list: []                      # any other feed, e.g. a site-wide one
+
 max_upload_bytes: 10485760
 keep_versions: 25
 ```
 
+---
+
 ## How content works
 
-Everything lives in `starpulse.sqlite` — pages, uploaded files, versions, and
-stats. Pages are gemtext at paths like `/index.gmi` and
-`/posts/2026-07-19-hello.gmi` (served extensionless: `/posts/2026-07-19-hello`).
-Dated filenames get listed newest-first and feed `/feed.xml`.
+Pages are gemtext at paths like `/index.gmi` and `/posts/hello.gmi`, served
+extensionless (`/posts/hello`). A path with no extension gets `.gmi`
+automatically, so you cannot accidentally create an unviewable file.
 
 **Special files**, inherited down the folder tree:
 
-| file | what |
+| file | what it does |
 |---|---|
-| `.header` / `.footer` | gemtext included above/below every page in that folder and below |
-| `.theme` | CSS applied to the web rendering of that folder and below (created prefilled with the site's own colour variables) |
-| `.feed` | marks the folder as a log and configures its Atom feed |
+| `.header` / `.footer` | gemtext wrapped above/below every page in that folder and below |
+| `.theme` | CSS applied to that folder and below (created prefilled with the site's own colour variables) |
+| `.feed` | marks the folder as publishing a feed, and configures it |
 
-**Directives** inside any page:
+**Directives**, expanded when a page is served:
 
 | directive | renders |
 |---|---|
-| `{{list [folder] [limit]}}` | link list of a folder's pages (dated first, newest first) |
+| `{{list [folder] [limit]}}` | link list of a folder's pages |
 | `{{include /path}}` | another page's content, inline |
-| `{{now [limit]}}` | your latest "now" micro-posts |
-| `{{latest_now}}` / `{{latest_now_date}}` | just the newest now-post's text / date (inline) |
-| `{{random /path}}` | one random line from a file (taglines!) |
-| `{{count}}` | the page's view counter |
-| `{{rev}}` | the page's revision number (edits so far) |
-| `{{updated}}` | the page's last-edit date |
+| `{{now [limit]}}` | your latest now-posts |
+| `{{latest_now}}` / `{{latest_now_date}}` | just the newest now-post's text / date |
+| `{{random /path}}` | one random line from a file |
+| `{{count}}` | this page's view counter |
+| `{{rev}}` | this page's revision number |
+| `{{updated}}` | this page's last-edit date |
 | `{{version}}` | server build version |
 
-**Now posts** are lightweight timestamped updates — post from the admin, SSH,
-API, or MCP; they render anywhere you put `{{now}}` (the starter site seeds a
-`/now.gmi` doing exactly that).
+---
 
-A path with no extension gets `.gmi` automatically, so typing `/about` in the
-editor creates `/about.gmi` rather than an unviewable binary. Renaming a page
-(change its path in the editor and save) moves its history and view counts
-along with it.
+## Posts and feeds
 
-Every save keeps the previous content as a **version** (deletes too), so
-undo is always one click away. Per-page **stats** are broken down by door:
-`http`, `gemini`, `http+tor`, `gemini+tor`. Full-text **search** (SQLite FTS5)
-is at `/search` on both protocols.
-
-## Syntax highlighting
-
-Fenced code blocks are highlighted **server side** — the public site stays
-JavaScript-free. The language comes from the fence's alt text, so a block
-opened with `go`, `python`, `sh`, `elixir`, `csharp` (297 lexers, via
-[chroma](https://github.com/alecthomas/chroma)) is coloured; a fence with no
-alt text, or a decorative one (`banner`, `table`), is left alone.
-
-```yaml
-highlight:
-  enabled: true
-  style: github            # any chroma style name
-  dark_style: github-dark  # used under prefers-color-scheme: dark
-```
-
-The **admin editor** highlights as you type too — gemtext (headings, links,
-lists, quotes, fences and `{{directives}}`), CSS in a `.theme`, and the
-`key: value` special files. That is a transparent textarea over a coloured
-layer, hand-rolled in the existing `admin.js`; no editor library is pulled in.
-
-## Feeds
-
-Two conventions, both supported:
-
-- **On gemini**, the idiomatic feed *is a page*: a list of link lines whose
-  labels begin with an ISO date. `{{list}}` already emits exactly that, so a
-  folder index like `/posts/` is subscribable in Lagrange or Amfora with no
-  configuration at all. This is the convention to prefer for gemini readers.
-- **On the web**, subscribers want **Atom** — and those come for free.
-
-Any folder holding **date-stamped pages** is a *log folder*: a gemlog, a
-project journal, release notes, whatever. starpulse discovers them from the
-content itself and publishes `<folder>feed.xml` for each, with no
-configuration:
-
-```
-/posts/2026-07-20-hello.gmi     ->  /posts/feed.xml
-/projects/2026-07-01-thing.gmi  ->  /projects/feed.xml
-```
-
-The feed is titled after the folder's `index.gmi`, served over HTTP *and*
-gemini, and advertised in the HTML `<head>` for auto-discovery.
-
-**What makes something a post** is having a date, resolved in this order:
-
-1. a `YYYY-MM-DD-` prefix on the filename — the most visible signal, and it
-   sorts itself;
-2. a `date:` in front matter, if you would rather not put dates in filenames;
-3. the page's **creation date from the database** — but *only* inside a folder
-   you have explicitly marked as a log.
-
-That third rule is why marking matters. Without it, creation dates would make
-every page on the site look like a post. With it, you get plain filenames:
-mark `/journal/`, write `/journal/hello-world.gmi`, and it is a post dated the
-day you wrote it.
-
-Toggle a folder's feed from the admin page list — each non-root folder row has
-a **feed: on/off** control. Turning it on writes a `.feed` file in that folder,
-prefilled and editable:
+**Feeds are opt-in.** A folder publishes one when you turn it on — the
+*enable feed* link beside it in the admin page list. Nothing starts publishing
+by itself. Turning it on writes a `.feed` file holding that feed's settings,
+editable like any other page:
 
 ```
 # Feed settings for this folder. Delete this file to stop publishing.
@@ -203,58 +200,56 @@ author: Jeff Clement
 limit: 30
 ```
 
-Folders that merely *contain* dated filenames publish a feed automatically
-without being marked, and their "+ new post" link prefills today's date.
-Marked folders skip the date prefix, since the database supplies the date.
+Inside a feed folder **every page is a post**, so filenames can stay plain. A
+post's date is resolved in order:
 
-The admin knows about log folders too: each one gets a **+ new post** link
-that opens the editor with today's date already in the filename.
+1. a `YYYY-MM-DD-` prefix on the filename — authoritative, portable, visible;
+2. a `date:` in front matter;
+3. the day the page was created, from the database.
 
-Configure only what you want beyond that:
+Outside a feed folder only the first two count, so ordinary pages stay undated
+and list alphabetically. Feeds are served over HTTP *and* gemini, and each is
+advertised in the HTML `<head>`.
 
-```yaml
-feeds:
-  author: "Your Name"     # used in every feed's <author>
-  limit: 30               # default entries per feed
-  auto: true              # per-folder feeds (default)
-  list:
-    - path: /now/feed.xml
-      source: now              # the now-post stream
-      page: /now               # where a human reads them
-      title: "My now posts"
-    - path: /feed.xml          # a site-wide feed, if you want one
-      source: /
-```
+On gemini the idiomatic feed is just a page of dated link lines — which
+`{{list}}` already emits, so a folder index is subscribable in Lagrange or
+Amfora with nothing enabled at all.
 
-`source` is a folder, `/` for the whole site, or the literal `now`. An
-explicit entry overrides the automatic feed at the same path.
+---
 
-## Editing
+## Syntax highlighting
 
-- **Web**: log in at `/login` → subtle ✎ edit link on every page, plus
-  `/admin` for uploads, history, stats, and now-posts.
-- **Titan**: enable `titan` and allowlist your client cert's SHA-256
-  fingerprint; then edit straight from Lagrange (fetch raw source at
-  `gemini://host/raw/<path>` with the same cert). Zero-byte upload = delete.
-- **REST**: `Authorization: Bearer <admin_password>`; see `/api/pages`,
-  `/api/search`, `/api/now`, `/api/versions`, `/api/stats`.
-- **SSH**: `ssh admin@host` (admin password — or list `authorized_keys` under
-  `ssh:` in the config for key-only auth, which disables admin passwords over
-  SSH entirely) drops you into the TUI
-  browser with editing — `e` edits the page you're reading, `c` creates a page,
-  `n` posts a now update, `x` deletes, `ctrl+s` saves. `ssh guest@host -p 2222`
-  gives read-only browsing (tab/enter to follow links, `/` to search).
-- **MCP**: streamable-HTTP server at `/mcp` (same bearer token) with tools for
-  reading, writing, searching, stats, now-posts, and version restore:
+Fenced code blocks are highlighted **server side**, so the public site needs no
+JavaScript. The language comes from the fence's alt text — 297 lexers via
+[chroma](https://github.com/alecthomas/chroma). Blocks with no alt text, and
+decorative ones (`banner`, `table`), are left alone.
+
+The admin editor highlights as you type too: gemtext, CSS in a `.theme`, and
+the `key: value` special files — hand-rolled, no editor library.
+
+---
+
+## Editing from elsewhere
+
+- **Titan**: enable `titan` and allowlist your client certificate's SHA-256
+  fingerprint (what Lagrange shows for an identity). With that identity active
+  you are served each page's **raw source**, so an edit round-trips exactly
+  instead of baking in inherited headers and expanded directives. A zero-byte
+  upload deletes.
+- **SSH**: `ssh admin@host` → `e` edit, `c` new page, `n` now-post, `x` delete,
+  `ctrl+s` save, `ctrl+g` syntax help, `g` fuzzy page jump, `/` search.
+- **REST**: `Authorization: Bearer <admin_password>` against `/api/pages`,
+  `/api/now`, `/api/search`, `/api/versions`, `/api/stats`.
+- **MCP**: streamable HTTP at `/mcp`.
 
 ```sh
 claude mcp add --transport http mysite https://example.org/mcp \
   --header "Authorization: Bearer <admin_password>"
 ```
 
-For clients that speak OAuth (Claude Desktop's custom connectors), starpulse
-is also its own tiny authorization server — discovery, PKCE authorization-code,
-client credentials and refresh, with the admin password as the one credential:
+For OAuth clients (Claude Desktop's custom connectors) starpulse is its own
+authorization server — discovery, PKCE authorization-code, client credentials
+and refresh:
 
 | field | value |
 |---|---|
@@ -262,18 +257,18 @@ client credentials and refresh, with the admin password as the one credential:
 | client ID | `mcp` |
 | client secret | your `admin_password` |
 
-Clients that discover dynamically need no configuration at all: an
-unauthenticated `/mcp` advertises `/.well-known/oauth-protected-resource`,
-and the authorize page asks for the admin password.
+---
 
-## Migrating from a file tree
+## Migrating from a directory of files
 
 ```sh
 starpulse import ./content
 ```
 
-Imports a directory (owg-capsule conventions understood: `_header.gmi` →
-`.header`, `{{index}}` → `{{list}}`, `{{counter}}` → `{{count}}`, …).
+Understands owg-capsule conventions: `_header.gmi` → `.header`, `{{index}}` →
+`{{list}}`, `{{counter}}` → `{{count}}`.
+
+---
 
 ## Development
 
@@ -282,6 +277,9 @@ go test ./...
 STARPULSE_HTTP_ADDR=:8080 STARPULSE_ADMIN_PASSWORD=dev go run . serve
 ```
 
-Releases are built by GitHub Actions: a docker image on
-`ghcr.io/jclement/starpulse` for every push to main, and binary tarballs for
-linux/darwin/windows/freebsd on every `v*` tag.
+GitHub Actions builds a `ghcr.io/jclement/starpulse` image on every push to
+main, and binary tarballs for linux/darwin/windows/freebsd on every `v*` tag.
+
+## License
+
+MIT

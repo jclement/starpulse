@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/charmbracelet/log"
 
@@ -225,14 +224,16 @@ func TestDeleteFromList(t *testing.T) {
 	}
 }
 
-func TestAutoLogFolderFeeds(t *testing.T) {
+func TestFolderFeeds(t *testing.T) {
 	_, st, ts := testServer(t)
+	_, _ = st.SavePage("/posts/"+store.FeedMarker, []byte("title: Gemlog\n"), "", "t")
+	_, _ = st.SavePage("/projects/"+store.FeedMarker, []byte(""), "", "t")
 	_, _ = st.SavePage("/posts/index.gmi", []byte("# Gemlog"), "", "t")
 	_, _ = st.SavePage("/posts/2026-07-20-hi.gmi", []byte("# Hi\n\nbody"), "", "t")
 	_, _ = st.SavePage("/projects/2026-07-01-thing.gmi", []byte("# Thing\n\nbody"), "", "t")
 	_, _ = st.SavePage("/about.gmi", []byte("# About"), "", "t")
 
-	// each log folder publishes its own feed, with no configuration
+	// each folder that is turned on publishes its own feed
 	code, posts := get(t, ts, "/posts/feed.xml")
 	if code != 200 || !strings.Contains(posts, "<title>Gemlog</title>") || !strings.Contains(posts, "Hi") {
 		t.Fatalf("auto posts feed: %d\n%s", code, posts)
@@ -244,9 +245,9 @@ func TestAutoLogFolderFeeds(t *testing.T) {
 	if strings.Contains(proj, "Hi") {
 		t.Error("projects feed leaked posts")
 	}
-	// a folder with no dated pages has no feed
+	// a folder that was never turned on has no feed
 	if code, _ := get(t, ts, "/media/feed.xml"); code != 404 {
-		t.Errorf("feed invented for non-log folder: %d", code)
+		t.Errorf("feed invented for an unmarked folder: %d", code)
 	}
 	// both are advertised for discovery
 	_, home := get(t, ts, "/")
@@ -257,39 +258,25 @@ func TestAutoLogFolderFeeds(t *testing.T) {
 	}
 }
 
-func TestNewPostDatePrefill(t *testing.T) {
+func TestNewPostLinkOnFeedFolders(t *testing.T) {
 	_, st, ts := testServer(t)
-	_, _ = st.SavePage("/posts/2026-07-20-hi.gmi", []byte("# Hi"), "", "t")
-	_, _ = st.SavePage("/about.gmi", []byte("# About"), "", "t")
+	_, _ = st.SavePage("/posts/"+store.FeedMarker, []byte(""), "", "t")
+	_, _ = st.SavePage("/posts/hello.gmi", []byte("# Hi"), "", "t")
+	_, _ = st.SavePage("/media/notes.gmi", []byte("# Notes"), "", "t")
 	client := login(t, ts, testPassword)
 
-	// the admin list offers "new post" on log folders only
 	resp, _ := client.Get(ts.URL + "/admin")
 	b, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if !strings.Contains(string(b), "new post") {
-		t.Error("no new-post link on the log folder")
+		t.Error("no new-post link on the feed folder")
 	}
-
-	// creating in a log folder prefills today's date
+	// names stay clean — the date comes from the database now
 	resp2, _ := client.Get(ts.URL + "/admin/edit?new=1&path=" + url.QueryEscape("/posts/"))
 	b2, _ := io.ReadAll(resp2.Body)
 	resp2.Body.Close()
-	today := time.Now().Format("2006-01-02")
-	want := `value="/posts/` + today + `-"`
-	if !strings.Contains(string(b2), want) {
-		t.Errorf("date not prefilled, want %s", want)
-	}
-
-	// a non-log folder gets the bare folder, no date
-	resp3, _ := client.Get(ts.URL + "/admin/edit?new=1&path=" + url.QueryEscape("/media/"))
-	b3, _ := io.ReadAll(resp3.Body)
-	resp3.Body.Close()
-	if !strings.Contains(string(b3), `value="/media/"`) {
-		t.Error("non-log folder should be offered as-is")
-	}
-	if strings.Contains(string(b3), `value="/media/`+today) {
-		t.Error("date prefilled for a non-log folder")
+	if !strings.Contains(string(b2), `value="/posts/"`) {
+		t.Error("new post path should be the bare folder, no date prefix")
 	}
 }
 
@@ -322,7 +309,7 @@ func TestFeedToggle(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp2.Body.Close()
-	if !st.IsMarkedLog("/journal/") {
+	if !st.IsFeedFolder("/journal/") {
 		t.Fatal("folder not marked after enabling")
 	}
 	// now the undated page is a post, dated from the database
@@ -343,11 +330,59 @@ func TestFeedToggle(t *testing.T) {
 	resp3, _ := client.PostForm(ts.URL+"/admin/feed", url.Values{
 		"folder": {"/journal/"}, "enable": {"false"}})
 	resp3.Body.Close()
-	if st.IsMarkedLog("/journal/") {
+	if st.IsFeedFolder("/journal/") {
 		t.Error("folder still marked after disabling")
 	}
 	if code, _ := get(t, ts, "/journal/feed.xml"); code != 404 {
 		t.Errorf("feed still served after disable: %d", code)
+	}
+}
+
+func TestAdminManual(t *testing.T) {
+	srv, st, _ := testServer(t)
+	srv.Cfg.SSH = config.SSHService{Service: config.Service{Enabled: true, Addr: ":22"}}
+	srv.Cfg.Telnet = config.Service{Enabled: true, Addr: ":23"}
+	srv.Cfg.Gemini = config.Service{Enabled: true, Addr: ":1965"}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	_, _ = st.SavePage("/index.gmi", []byte("# Home"), "", "t")
+
+	client := login(t, ts, testPassword)
+	resp, err := client.Get(ts.URL + "/admin/manual")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	body := string(b)
+
+	// it documents the doors that are actually switched on, with this host
+	for _, want := range []string{
+		"ssh guest@test.example", "telnet test.example", "gemini://test.example/",
+		"{{list [folder] [limit]}}", ".feed", "enable feed",
+		"YYYY-MM-DD-", "/mcp",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("manual missing %q", want)
+		}
+	}
+	// ...and not ones that are off
+	srv.Cfg.Telnet.Enabled = false
+	ts2 := httptest.NewServer(srv.Handler())
+	defer ts2.Close()
+	c2 := login(t, ts2, testPassword)
+	r2, _ := c2.Get(ts2.URL + "/admin/manual")
+	b2, _ := io.ReadAll(r2.Body)
+	r2.Body.Close()
+	if strings.Contains(string(b2), "telnet test.example") {
+		t.Error("manual lists a door that is switched off")
+	}
+	// the manual and the editor popover share one reference
+	r3, _ := c2.Get(ts2.URL + "/admin/edit?path=/index.gmi")
+	b3, _ := io.ReadAll(r3.Body)
+	r3.Body.Close()
+	if !strings.Contains(string(b3), "{{latest_now}}") || !strings.Contains(string(b2), "{{latest_now}}") {
+		t.Error("syntax reference not shared between editor and manual")
 	}
 }
 
@@ -361,19 +396,21 @@ func TestSearchPage(t *testing.T) {
 }
 
 func TestFeed(t *testing.T) {
-	_, st, ts := testServer(t)
+	srv, st, _ := testServer(t)
+	// a site-wide feed is one of the things config is still for
+	srv.Cfg.Feeds.List = []config.Feed{{Path: "/feed.xml", Source: "/"}}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
 	_, _ = st.SavePage("/posts/2026-07-19-hello.gmi", []byte("# Hello World"), "", "t")
 	_, _ = st.SavePage("/posts/undated.gmi", []byte("# No date"), "", "t")
 	code, body := get(t, ts, "/feed.xml")
 	if code != 200 || !strings.Contains(body, "<title>Hello World</title>") {
 		t.Errorf("feed: %d\n%s", code, body)
 	}
+	// outside a feed folder an undated page is a page, not a post
 	if strings.Contains(body, "No date") {
-		t.Error("undated page in feed")
-	}
-	// the historical /posts/feed.xml alias keeps working
-	if code, _ := get(t, ts, "/posts/feed.xml"); code != 200 {
-		t.Errorf("legacy feed alias = %d", code)
+		t.Error("undated page in a site-wide feed")
 	}
 }
 

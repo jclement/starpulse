@@ -363,29 +363,29 @@ func TestRenameCarriesHistory(t *testing.T) {
 	}
 }
 
-func TestLogFoldersAndEffectiveDate(t *testing.T) {
+func TestFeedFoldersAndEffectiveDate(t *testing.T) {
 	st := openTest(t)
-	// a marked folder: plain filenames, dates come from the database
+	// a folder with its feed turned on: plain filenames, DB dates
 	_, _ = st.SavePage("/journal/"+FeedMarker,
 		[]byte("# a comment\ntitle: My Journal\nsubtitle: things I did\nauthor: Jeff\nlimit: 5\n"), "", "t")
 	_, _ = st.SavePage("/journal/hello-world.gmi", []byte("# Hello World\n\nbody"), "", "t")
-	// an unmarked folder that qualifies purely by dated filenames
+	// dated filenames alone never turn a feed on
 	_, _ = st.SavePage("/posts/2026-07-20-dated.gmi", []byte("# Dated"), "", "t")
 	// an ordinary folder
 	_, _ = st.SavePage("/pages/about.gmi", []byte("# About"), "", "t")
 
-	logs := st.LogFolders()
-	if marked, ok := logs["/journal/"]; !ok || !marked {
-		t.Errorf("marked folder not detected: %v", logs)
+	feeds := st.FeedFolders()
+	if _, ok := feeds["/journal/"]; !ok {
+		t.Errorf("folder with a marker does not publish: %v", feeds)
 	}
-	if marked, ok := logs["/posts/"]; !ok || marked {
-		t.Errorf("dated folder should qualify but not be marked: %v", logs)
+	if _, ok := feeds["/posts/"]; ok {
+		t.Error("dated filenames must not auto-publish a feed")
 	}
-	if _, ok := logs["/pages/"]; ok {
-		t.Error("ordinary folder treated as a log")
+	if _, ok := feeds["/pages/"]; ok {
+		t.Error("ordinary folder treated as publishing")
 	}
-	if !st.IsMarkedLog("/journal") || st.IsMarkedLog("/posts") {
-		t.Error("IsMarkedLog wrong")
+	if !st.IsFeedFolder("/journal") || st.IsFeedFolder("/posts") {
+		t.Error("IsFeedFolder wrong")
 	}
 
 	fs := st.FeedInfo("/journal/")
@@ -401,7 +401,7 @@ func TestLogFoldersAndEffectiveDate(t *testing.T) {
 		t.Errorf("default marker round-trip = %+v", def)
 	}
 
-	// an undated page in a marked folder gets its creation date
+	// an undated page in a feed folder gets its creation date
 	metas, _ := st.ListPrefix("/journal/")
 	var page Meta
 	for _, m := range metas {
@@ -411,10 +411,15 @@ func TestLogFoldersAndEffectiveDate(t *testing.T) {
 	}
 	today := time.Now().Format("2006-01-02")
 	if d := st.EffectiveDate(page, true); d != today {
-		t.Errorf("marked-folder date = %q, want %q", d, today)
+		t.Errorf("feed-folder date = %q, want %q", d, today)
 	}
-	// ...but the same page outside a marked folder has no date at all
+	// ...but the same page outside a feed folder stays undated
 	if d := st.EffectiveDate(page, false); d != "" {
-		t.Errorf("unmarked page should have no date, got %q", d)
+		t.Errorf("page outside a feed folder should have no date, got %q", d)
+	}
+	// an explicit filename date always wins over the creation date
+	dated, _ := st.ListPrefix("/posts/")
+	if d := st.EffectiveDate(dated[0], true); d != "2026-07-20" {
+		t.Errorf("filename date should win: %q", d)
 	}
 }

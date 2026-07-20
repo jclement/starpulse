@@ -55,15 +55,27 @@ type Feed struct {
 // IsNow reports whether the feed draws from now-posts rather than pages.
 func (f Feed) IsNow() bool { return strings.EqualFold(f.Source, "now") }
 
+// NowFeed publishes the now-post stream as its own feed. Like folder feeds,
+// it stays off until you ask for it.
+type NowFeed struct {
+	Enabled bool   `yaml:"enabled"`
+	Path    string `yaml:"path"`
+	// Page is where a human reads the posts, e.g. "/now".
+	Page     string `yaml:"page"`
+	Title    string `yaml:"title"`
+	Subtitle string `yaml:"subtitle"`
+}
+
 // Feeds configures the Atom feeds this site publishes.
 type Feeds struct {
 	// Author is the name used in every feed's <author>.
 	Author string `yaml:"author"`
 	// Limit caps entries per feed when a feed does not set its own.
 	Limit int `yaml:"limit"`
-	// Auto publishes <folder>feed.xml for every folder holding dated pages
-	// ("log folders"), with no configuration. On by default.
-	Auto bool   `yaml:"auto"`
+	// Now publishes the now-post stream.
+	Now NowFeed `yaml:"now"`
+	// List holds any other feeds (a site-wide one, for instance). Folder
+	// feeds are not listed here — they are turned on per folder.
 	List []Feed `yaml:"list"`
 }
 
@@ -146,7 +158,7 @@ func Default() *Config {
 		Titan:    Titan{Enabled: false},
 		Tor:      Tor{Enabled: false, Binary: "tor"},
 
-		Feeds:     Feeds{Auto: true, Limit: 30},
+		Feeds:     Feeds{Limit: 30},
 		Highlight: Highlight{Enabled: true, Style: "github", DarkStyle: "github-dark"},
 
 		MaxUploadBytes: 10 << 20,
@@ -260,13 +272,23 @@ func applyEnv(c *Config) {
 	i64("STARPULSE_MAX_UPLOAD_BYTES", &c.MaxUploadBytes)
 }
 
-// EffectiveFeeds returns the configured feeds with defaults filled in. With
-// nothing configured it yields one site-wide feed at /feed.xml, matching the
-// historical behaviour.
+// EffectiveFeeds returns the explicitly configured feeds with defaults
+// filled in. Folder feeds are not listed here — those are turned on per
+// folder and discovered from the store.
 func (c *Config) EffectiveFeeds() []Feed {
 	list := c.Feeds.List
-	if len(list) == 0 {
-		list = []Feed{{Path: "/feed.xml", Source: "/", Title: c.Hostname}}
+	if c.Feeds.Now.Enabled {
+		n := c.Feeds.Now
+		if n.Path == "" {
+			n.Path = "/now/feed.xml"
+		}
+		if n.Page == "" {
+			n.Page = "/now"
+		}
+		list = append([]Feed{{
+			Path: n.Path, Source: "now", Page: n.Page,
+			Title: n.Title, Subtitle: n.Subtitle,
+		}}, list...)
 	}
 	out := make([]Feed, 0, len(list))
 	for _, f := range list {
@@ -393,22 +415,21 @@ tor:
   binary: tor
   # onion: xyz.onion     # set instead if tor is managed outside starpulse
 
-# Atom feeds. With no list configured, a single site-wide feed is published
-# at /feed.xml. On gemini the idiomatic feed is just a page of dated link
-# lines — {{list}} already emits that, so /posts/ is subscribable as-is.
+# Atom feeds. Folders publish a feed when you turn one on in the admin (it
+# writes a .feed file there); these entries are for anything else — the
+# now-post stream, or a site-wide feed. On gemini the idiomatic feed is just
+# a page of dated link lines, which {{list}} already emits.
 feeds:
   author: ""
   limit: 30
-  # any folder holding date-stamped pages is a "log folder" and publishes
-  # its own feed automatically, e.g. /posts/ -> /posts/feed.xml
-  auto: true
-  # extra feeds beyond the automatic ones (a site-wide feed, now-posts, or
-  # a folder feed you want to retitle)
-  list:
-    - path: /now/feed.xml
-      source: now              # the now-post stream
-      page: /now               # where a human can read them
-      title: "My now posts"
+  # publish the now-post stream as a feed
+  now:
+    enabled: false
+    path: /now/feed.xml
+    page: /now
+    title: "My now posts"
+  # anything else, e.g. a single site-wide feed of every dated page
+  list: []
 
 # Syntax highlighting for fenced code blocks on the web. The language comes
 # from the text after the opening fence (go, python, sh, ...). Palettes are

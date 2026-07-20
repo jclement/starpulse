@@ -161,7 +161,12 @@ func TestSearchGemini(t *testing.T) {
 func TestFeedOverGemini(t *testing.T) {
 	ts := startServer(t)
 	_, _ = ts.st.SavePage("/posts/2026-07-19-hi.gmi", []byte("# Hi There\n\nbody"), "", "t")
-	resp := ts.request(t, "gemini://localhost/feed.xml", nil, nil)
+	// dated pages alone publish nothing — the folder must be turned on
+	if resp := ts.request(t, "gemini://localhost/posts/feed.xml", nil, nil); !strings.HasPrefix(resp, "51 ") {
+		t.Fatalf("unmarked folder served a feed: %q", resp)
+	}
+	_, _ = ts.st.SavePage("/posts/"+store.FeedMarker, []byte("title: Posts\n"), "", "t")
+	resp := ts.request(t, "gemini://localhost/posts/feed.xml", nil, nil)
 	if !strings.HasPrefix(resp, "20 application/atom+xml") {
 		t.Fatalf("feed status/mime: %q", resp[:min(60, len(resp))])
 	}

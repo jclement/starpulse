@@ -246,17 +246,16 @@ func PageDate(p string, content []byte) string {
 
 // ---- log folders --------------------------------------------------------
 
-// FeedMarker is the special file that marks a folder as a log: a gemlog, a
-// project journal, release notes. Its presence means "every page in here is
-// a post", so posts can have plain names and take their date from the
-// database. Its contents optionally give the feed a title (first line) and
-// subtitle (the rest).
+// FeedMarker is the special file that makes a folder publish a feed: a
+// gemlog, a project journal, release notes. Its presence means "every page
+// in here is a post", so posts can have plain names and take their date
+// from the database. It also holds that feed's settings.
 const FeedMarker = ".feed"
 
-// LogFolders returns folders that publish a feed, mapped to whether the
-// folder was explicitly marked with a .feed file. A folder qualifies if it
-// is marked, or if it simply contains date-stamped pages.
-func (s *Store) LogFolders() map[string]bool {
+// FeedFolders returns the folders that publish a feed — that is, the ones
+// carrying a .feed marker. Publishing is always an explicit choice: a folder
+// never starts producing a feed just because something in it looks dated.
+func (s *Store) FeedFolders() map[string]bool {
 	out := map[string]bool{}
 	metas, err := s.ListAll()
 	if err != nil {
@@ -265,32 +264,13 @@ func (s *Store) LogFolders() map[string]bool {
 	for _, m := range metas {
 		if path.Base(m.Path) == FeedMarker {
 			out[folderOf(m.Path)] = true
-			continue
-		}
-		if m.Binary || Hidden(m.Path) || !strings.HasSuffix(m.Path, ".gmi") {
-			continue
-		}
-		if m.Date != "" {
-			if _, ok := out[folderOf(m.Path)]; !ok {
-				out[folderOf(m.Path)] = false
-			}
 		}
 	}
 	return out
 }
 
-// IsLogFolder reports whether a folder publishes a feed.
-func (s *Store) IsLogFolder(folder string) bool {
-	if !strings.HasSuffix(folder, "/") {
-		folder += "/"
-	}
-	_, ok := s.LogFolders()[folder]
-	return ok
-}
-
-// IsMarkedLog reports whether a folder carries an explicit .feed marker, in
-// which case every page in it is a post and may be dated from the database.
-func (s *Store) IsMarkedLog(folder string) bool {
+// IsFeedFolder reports whether a folder publishes a feed.
+func (s *Store) IsFeedFolder(folder string) bool {
 	if !strings.HasSuffix(folder, "/") {
 		folder += "/"
 	}
@@ -359,13 +339,21 @@ limit: %d
 `, title, author, limit))
 }
 
-// EffectiveDate is the date used for ordering and feeds: the page's explicit
-// date, or — inside a marked log folder — the day it was created.
-func (s *Store) EffectiveDate(m Meta, markedFolder bool) string {
+// EffectiveDate is when a page happened, in priority order:
+//
+//  1. a YYYY-MM-DD prefix on the filename — authoritative, portable, visible
+//  2. a "date:" in front matter — for clean filenames
+//  3. the day the page was created, from the database
+//
+// useCreated gates that last step. Feeds and feed-folder listings pass true
+// (every page in a feed folder is a post, so it needs a date); ordinary
+// listings pass false, so an undated page stays undated and sorts by name
+// rather than silently becoming chronological.
+func (s *Store) EffectiveDate(m Meta, useCreated bool) string {
 	if m.Date != "" {
 		return m.Date
 	}
-	if markedFolder {
+	if useCreated {
 		return m.Created.Format("2006-01-02")
 	}
 	return ""

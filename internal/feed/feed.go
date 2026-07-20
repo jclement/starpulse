@@ -134,8 +134,9 @@ func (b *Builder) pageEntries(f config.Feed, baseURL string) []entry {
 		prefix += "/"
 	}
 
-	// inside a marked folder every page is a post, dated from the database
-	marked := prefix != "/" && b.Store.IsMarkedLog(prefix)
+	// every page in a feed folder is a post, so undated ones fall back to
+	// their creation date
+	inFeedFolder := prefix != "/" && b.Store.IsFeedFolder(prefix)
 
 	var out []entry
 	for _, m := range metas {
@@ -148,7 +149,7 @@ func (b *Builder) pageEntries(f config.Feed, baseURL string) []entry {
 		if strings.HasSuffix(m.Path, "/index.gmi") {
 			continue // the folder's own page is not one of its posts
 		}
-		date := b.Store.EffectiveDate(m, marked)
+		date := b.Store.EffectiveDate(m, inFeedFolder)
 		if date == "" {
 			continue // only dated pages are feed-worthy
 		}
@@ -289,12 +290,8 @@ func PageURL(p string) string {
 // itself rather than configured, and each one publishes its own Atom feed
 // at <folder>feed.xml.
 
-// LogFolders returns folders publishing a feed, mapped to whether each was
-// explicitly marked with a .feed file.
-func LogFolders(st *store.Store) map[string]bool { return st.LogFolders() }
-
-// IsLogFolder reports whether a folder publishes a feed.
-func IsLogFolder(st *store.Store, folder string) bool { return st.IsLogFolder(folder) }
+// FeedFolders returns the folders publishing a feed.
+func FeedFolders(st *store.Store) map[string]bool { return st.FeedFolders() }
 
 // Resolve maps a request path to the feed it should serve, if any. Explicit
 // configuration wins; otherwise a <folder>feed.xml under a log folder is
@@ -305,11 +302,11 @@ func Resolve(cfg *config.Config, st *store.Store, path string) (config.Feed, boo
 			return f, true
 		}
 	}
-	if !cfg.Feeds.Auto || !strings.HasSuffix(path, "/feed.xml") {
+	if !strings.HasSuffix(path, "/feed.xml") {
 		return config.Feed{}, false
 	}
 	folder := strings.TrimSuffix(path, "feed.xml")
-	if !IsLogFolder(st, folder) {
+	if !st.IsFeedFolder(folder) {
 		return config.Feed{}, false
 	}
 	limit := cfg.Feeds.Limit

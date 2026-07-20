@@ -109,12 +109,9 @@ func TestNowFeed(t *testing.T) {
 func TestEffectiveFeedsDefaults(t *testing.T) {
 	c := config.Default()
 	c.Hostname = "ex.example"
-	fs := c.EffectiveFeeds()
-	if len(fs) != 1 || fs[0].Path != "/feed.xml" || fs[0].Source != "/" {
-		t.Fatalf("default feed wrong: %+v", fs)
-	}
-	if fs[0].Limit != 30 {
-		t.Errorf("default limit = %d", fs[0].Limit)
+	// nothing is published until something asks for it
+	if fs := c.EffectiveFeeds(); len(fs) != 0 {
+		t.Fatalf("expected no feeds by default, got %+v", fs)
 	}
 
 	c.Feeds = config.Feeds{
@@ -126,7 +123,7 @@ func TestEffectiveFeedsDefaults(t *testing.T) {
 			{Source: "/orphan/"}, // no path: dropped
 		},
 	}
-	fs = c.EffectiveFeeds()
+	fs := c.EffectiveFeeds()
 	if len(fs) != 2 {
 		t.Fatalf("expected 2 usable feeds, got %d: %+v", len(fs), fs)
 	}
@@ -162,7 +159,7 @@ func TestDatedNameAndPageURL(t *testing.T) {
 	}
 }
 
-func TestLogFolderDiscovery(t *testing.T) {
+func TestFeedFoldersAreOptIn(t *testing.T) {
 	st := testStore(t)
 	_, _ = st.SavePage("/posts/2026-07-19-a.gmi", []byte("# A"), "", "t")
 	_, _ = st.SavePage("/posts/2026-07-20-b.gmi", []byte("# B"), "", "t")
@@ -170,21 +167,20 @@ func TestLogFolderDiscovery(t *testing.T) {
 	_, _ = st.SavePage("/projects/2026-07-01-p.gmi", []byte("# P"), "", "t")
 	_, _ = st.SavePage("/about.gmi", []byte("# About"), "", "t") // undated: not a log
 
-	logs := LogFolders(st)
-	if _, ok := logs["/posts/"]; !ok {
-		t.Errorf("log folders = %v", logs)
+	// dated filenames alone must NOT create a feed — publishing is opt-in
+	if len(FeedFolders(st)) != 0 {
+		t.Errorf("dated pages should not auto-publish: %v", FeedFolders(st))
 	}
-	if _, ok := logs["/projects/"]; !ok {
-		t.Errorf("log folders = %v", logs)
+	if st.IsFeedFolder("/posts/") {
+		t.Error("unmarked folder reported as publishing")
 	}
-	if _, ok := logs["/"]; ok {
-		t.Error("root should not be a log folder (no dated pages)")
+	// marking it is what turns the feed on
+	_, _ = st.SavePage("/posts/"+store.FeedMarker, []byte("title: Posts\n"), "", "t")
+	if !st.IsFeedFolder("/posts") || !st.IsFeedFolder("/posts/") {
+		t.Error("marked folder should publish, either path form")
 	}
-	if !IsLogFolder(st, "/posts") || !IsLogFolder(st, "/posts/") {
-		t.Error("IsLogFolder should accept either form")
-	}
-	if IsLogFolder(st, "/nope/") {
-		t.Error("non-log folder reported as log")
+	if _, ok := FeedFolders(st)["/posts/"]; !ok {
+		t.Errorf("feed folders = %v", FeedFolders(st))
 	}
 }
 
@@ -197,28 +193,23 @@ func TestAutoFeedResolution(t *testing.T) {
 	c := config.Default()
 	c.Hostname = "ex.example"
 
-	// auto feed for each log folder, titled from the folder index
+	// nothing is published until a folder is marked
+	if _, ok := Resolve(c, st, "/posts/feed.xml"); ok {
+		t.Error("feed served for an unmarked folder")
+	}
+	_, _ = st.SavePage("/posts/"+store.FeedMarker, []byte(""), "", "t")
 	f, ok := Resolve(c, st, "/posts/feed.xml")
 	if !ok || f.Source != "/posts/" || f.Title != "Gemlog" {
-		t.Fatalf("auto posts feed = %+v ok=%v", f, ok)
+		t.Fatalf("marked posts feed = %+v ok=%v", f, ok)
 	}
-	f2, ok2 := Resolve(c, st, "/projects/feed.xml")
-	if !ok2 || f2.Source != "/projects/" {
-		t.Fatalf("auto projects feed = %+v ok=%v", f2, ok2)
+	// a marked folder elsewhere is independent
+	if _, ok := Resolve(c, st, "/projects/feed.xml"); ok {
+		t.Error("unmarked projects folder should not publish")
 	}
-	// folder without dated pages has no feed
-	if _, ok := Resolve(c, st, "/nope/feed.xml"); ok {
-		t.Error("feed invented for a non-log folder")
-	}
-	// explicit config wins over auto
+	// explicit config still wins for the same path
 	c.Feeds.List = []config.Feed{{Path: "/posts/feed.xml", Source: "/posts/", Title: "Custom"}}
 	if f, _ := Resolve(c, st, "/posts/feed.xml"); f.Title != "Custom" {
 		t.Errorf("explicit config should win: %+v", f)
-	}
-	// auto can be switched off
-	c.Feeds.Auto = false
-	if _, ok := Resolve(c, st, "/projects/feed.xml"); ok {
-		t.Error("auto feeds still served with auto disabled")
 	}
 }
 
@@ -256,15 +247,12 @@ func TestDateSources(t *testing.T) {
 	if strings.Index(out, "Named Wins") > strings.Index(out, "Clean") {
 		t.Error("ordering wrong")
 	}
-	// and the folder counts as a log folder on either signal
-	if _, ok := LogFolders(st)["/posts/"]; !ok {
-		t.Error("folder with dated pages is not a log folder")
-	}
+
 }
 
-func TestMarkedFolderCleanNames(t *testing.T) {
+func TestFeedFolderCleanNames(t *testing.T) {
 	st := testStore(t)
-	// mark the folder — now plain filenames are posts, dated from the DB
+	// turning the feed on makes every page a post, dated from the DB
 	_, _ = st.SavePage("/journal/"+store.FeedMarker,
 		[]byte("title: Field Notes\nsubtitle: what I got up to\nauthor: Jeff\nlimit: 5\n"), "", "t")
 	_, _ = st.SavePage("/journal/hello-world.gmi", []byte("# Hello World\n\nbody"), "", "t")
@@ -307,5 +295,25 @@ func TestMarkedFolderCleanNames(t *testing.T) {
 	}
 	if !strings.Contains(out, "<author><name>Jeff</name></author>") {
 		t.Error("per-folder author not applied")
+	}
+}
+
+func TestNowFeedIsOptIn(t *testing.T) {
+	c := config.Default()
+	c.Hostname = "ex.example"
+	// off by default, like every other feed
+	for _, f := range c.EffectiveFeeds() {
+		if f.IsNow() {
+			t.Fatal("now feed published without being asked for")
+		}
+	}
+	c.Feeds.Now = config.NowFeed{Enabled: true, Title: "Now"}
+	fs := c.EffectiveFeeds()
+	if len(fs) != 1 || !fs[0].IsNow() {
+		t.Fatalf("now feed not published: %+v", fs)
+	}
+	// sensible defaults filled in
+	if fs[0].Path != "/now/feed.xml" || fs[0].Page != "/now" {
+		t.Errorf("now feed defaults = %+v", fs[0])
 	}
 }

@@ -462,7 +462,7 @@ func (s *Site) List(urlDir string) []Entry {
 	if err != nil {
 		return nil
 	}
-	marked := dir != "" && s.Store.IsMarkedLog(prefix)
+	inFeedFolder := dir != "" && s.Store.IsFeedFolder(prefix)
 	var out []Entry
 	seenDirs := map[string]bool{}
 	for _, m := range metas {
@@ -500,7 +500,7 @@ func (s *Site) List(urlDir string) []Entry {
 		if e.Title == "" {
 			e.Title = stem
 		}
-		e.Date = s.Store.EffectiveDate(m, marked)
+		e.Date = s.Store.EffectiveDate(m, inFeedFolder)
 		// front-matter date/title override
 		if pg, err := s.Store.GetPage(m.Path); err == nil {
 			if _, fm := stripFrontMatter(string(pg.Content)); fm.Date != "" || fm.Title != "" {

@@ -10,9 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/jclement/starpulse/internal/feed"
 	"github.com/jclement/starpulse/internal/site"
 	"github.com/jclement/starpulse/internal/store"
 )
@@ -40,6 +38,7 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/now/delete", guard(s.adminNowDelete))
 	mux.HandleFunc("/admin/stats", guard(s.adminStats))
 	mux.HandleFunc("/admin/feed", guard(s.adminFeedToggle))
+	mux.HandleFunc("/admin/manual", guard(s.adminManual))
 }
 
 func (s *Server) adminRender(w http.ResponseWriter, r *http.Request, title, body string) {
@@ -54,6 +53,7 @@ func adminNav() string {
 <a class="btn quiet" href="/admin/upload">upload</a>
 <a class="btn quiet" href="/admin/now">now</a>
 <a class="btn quiet" href="/admin/stats">stats</a>
+<a class="btn quiet" href="/admin/manual">manual</a>
 <a class="btn quiet" href="/">view site</a>
 <form class="inline" method="post" action="/logout"><button class="quiet" type="submit">logout</button></form>
 </div>`
@@ -77,7 +77,7 @@ func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
 	// bucket by folder first — a flat path sort interleaves subfolder pages
 	// with root pages (/posts/… sorts between /now.gmi and /projects.gmi),
 	// which would split a folder into several groups.
-	logFolders := feed.LogFolders(s.Store)
+	feedFolders := s.Store.FeedFolders()
 	byFolder := map[string][]store.Meta{}
 	var folders []string
 	for _, m := range metas {
@@ -100,16 +100,16 @@ func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
 		if label == "/" {
 			label = "/ (root)"
 		}
-		marked, isLog := logFolders[folder]
+		_, isFeed := feedFolders[folder]
 		actions := ""
-		if isLog {
+		if isFeed {
 			actions += fmt.Sprintf(` <span class="dim">·</span> <a class="newpost" href="/admin/edit?new=1&amp;path=%s">new post</a>`,
 				url.QueryEscape(folder))
 		}
 		// every non-root folder can publish (or stop publishing) a feed
 		if folder != "/" {
 			label := "enable feed"
-			if marked {
+			if isFeed {
 				label = "disable feed"
 			}
 			actions += fmt.Sprintf(
@@ -117,10 +117,7 @@ func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
 					`<input type="hidden" name="folder" value="%s">`+
 					`<input type="hidden" name="enable" value="%t">`+
 					`<button class="linkish" type="submit" title="Atom feed for this folder">%s</button></form>`,
-				html.EscapeString(folder), !marked, label)
-			if isLog && !marked {
-				actions += ` <span class="dim">· feed on (dated posts)</span>`
-			}
+				html.EscapeString(folder), !isFeed, label)
 		}
 		fmt.Fprintf(&b, `<tbody class="folder-group" data-folder="%s"><tr class="folder-row"><td colspan="4">%s <span class="dim">%d</span>%s</td></tr>`+"\n",
 			html.EscapeString(strings.ToLower(folder)), html.EscapeString(label), len(rows), actions)
@@ -180,7 +177,14 @@ func sizeStr(n int64) string {
 // popover. Kept out of the template so directive braces stay literal.
 const editorHelpHTML = `<details class="help" id="syntax-help">
 <summary class="btn quiet">syntax</summary>
-<div class="help-panel">
+<div class="help-panel">` + editorHelpBodyHTML + `</div>
+</details>`
+
+// editorHelpBody is the syntax reference, shared by the editor popover and
+// the manual page so they can never drift apart.
+func editorHelpBody() string { return editorHelpBodyHTML }
+
+const editorHelpBodyHTML = `
 <h3>Gemtext</h3>
 <pre># Heading 1        ## Heading 2       ### Heading 3
 =&gt; /path Link label
@@ -216,9 +220,7 @@ date: 2026-07-20
 header: none
 footer: none
 ---</pre>
-<p class="dim">Dated filenames (<code>/posts/2026-07-20-hi.gmi</code>) sort newest-first in {{list}} and feed /feed.xml.</p>
-</div>
-</details>`
+<p class="dim">Dated filenames (<code>/posts/2026-07-20-hi.gmi</code>) sort newest-first in listings and feeds.</p>`
 
 var editorTpl = template.Must(template.New("editor").Parse(`<!DOCTYPE html>
 <html lang="en">
@@ -271,11 +273,6 @@ func (s *Server) adminEdit(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Query().Get("path")
 	isNew := r.URL.Query().Get("new") == "1" || p == ""
 	// creating inside a log folder? offer today's date-stamped filename
-	// a marked folder dates its posts from the database, so leave the name
-	// clean; an unmarked log folder relies on dated filenames, so offer one
-	if isNew && strings.HasSuffix(p, "/") && feed.IsLogFolder(s.Store, p) && !s.Store.IsMarkedLog(p) {
-		p += time.Now().In(s.loc()).Format("2006-01-02") + "-"
-	}
 	content := ""
 	// starting points for the special files, so they are editable rather
 	// than blank puzzles

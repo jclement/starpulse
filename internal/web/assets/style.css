@@ -517,3 +517,7 @@ a.newpost { font-weight: 400; font-size: 0.9em; margin-left: 0.6em; }
 @media (prefers-color-scheme: dark) {
   .g-dir { color: #c792ea; }
 }
+
+/* row actions right-align so history/delete line up whether or not the row
+   also has a view link */
+table.admin td:last-child, table.admin th:last-child { text-align: right; }

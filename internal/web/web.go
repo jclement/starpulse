@@ -236,17 +236,14 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, titl
 }
 
 // discoverableFeeds lists every feed worth advertising in <head>:
-// configured ones plus each auto-discovered log folder.
+// configured ones plus every folder that publishes one.
 func (s *Server) discoverableFeeds() []config.Feed {
 	out := s.Cfg.EffectiveFeeds()
-	if !s.Cfg.Feeds.Auto {
-		return out
-	}
 	seen := map[string]bool{}
 	for _, f := range out {
 		seen[f.Path] = true
 	}
-	for folder := range feed.LogFolders(s.Store) {
+	for folder := range s.Store.FeedFolders() {
 		path := folder + "feed.xml"
 		if seen[path] {
 			continue
