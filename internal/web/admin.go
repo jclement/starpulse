@@ -34,9 +34,9 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/version", guard(s.adminVersion))
 	mux.HandleFunc("/admin/restore", guard(s.adminRestore))
 	mux.HandleFunc("/admin/upload", guard(s.adminUpload))
-	mux.HandleFunc("/admin/now", guard(s.adminNow))
 	mux.HandleFunc("/admin/stats", guard(s.adminStats))
 	mux.HandleFunc("/admin/feed", guard(s.adminFeedToggle))
+	mux.HandleFunc("/admin/prefix", guard(s.adminPrefix))
 	mux.HandleFunc("/admin/manual", guard(s.adminManual))
 }
 
@@ -51,7 +51,6 @@ func adminNav() string {
 	return `<nav class="anav">
 <a href="/admin">pages</a>
 <a class="new" href="/admin/edit?path=&new=1">+ page</a>
-<a class="new" href="/admin/now">+ note</a>
 <a href="/admin/upload">upload</a>
 <a href="/admin/stats">stats</a>
 <a href="/admin/manual">manual</a>
@@ -188,7 +187,12 @@ type editorData struct {
 func (s *Server) adminEdit(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Query().Get("path")
 	isNew := r.URL.Query().Get("new") == "1" || p == ""
-	// creating inside a log folder? offer today's date-stamped filename
+	// a folder target means "a new page in here": offer whatever this folder
+	// names its pages. It lands in the editable path field, so it is a
+	// suggestion, not a rule.
+	if isNew && strings.HasSuffix(p, "/") {
+		p = s.Store.NewPagePath(p, time.Now().In(s.loc()))
+	}
 	content := ""
 	// starting points for the special files, so they are editable rather
 	// than blank puzzles
@@ -388,29 +392,6 @@ func (s *Server) adminUpload(w http.ResponseWriter, r *http.Request) {
 </form>`, sizeStr(s.Cfg.MaxUploadBytes))
 	b.WriteString(`<p class="dim">Reference an image from a page with <code>=&gt; /media/photo.jpg A photo</code> — it renders inline on the web and as a link on gemini.</p>`)
 	s.adminRender(w, r, "upload", b.String())
-}
-
-// adminNow mints the next filename in a note stream and hands it to the
-// ordinary editor. A note is just a page with a generated name, so it gets
-// preview, syntax help and history like everything else instead of a
-// second, poorer editor of its own. ?folder= picks the stream, so a site can
-// run several (a /now/, a /links/) and tell them apart.
-func (s *Server) adminNow(w http.ResponseWriter, r *http.Request) {
-	folder := strings.TrimSpace(r.URL.Query().Get("folder"))
-	if folder == "" {
-		folder = s.nowFolder()
-	}
-	if !strings.HasSuffix(folder, "/") {
-		folder += "/"
-	}
-	clean, ok := store.CleanPath(folder)
-	if !ok {
-		http.Redirect(w, r, "/admin?msg="+url.QueryEscape("bad folder"), http.StatusSeeOther)
-		return
-	}
-	folder = strings.TrimSuffix(clean, "/") + "/"
-	path := s.Store.NewStreamPath(folder, time.Now().In(s.loc()))
-	http.Redirect(w, r, "/admin/edit?new=1&path="+url.QueryEscape(path), http.StatusSeeOther)
 }
 
 // adminFeedToggle turns a folder's Atom feed on or off by creating or

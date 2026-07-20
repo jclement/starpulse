@@ -272,6 +272,11 @@ type FeedSettings struct {
 	Subtitle string
 	Author   string
 	Limit    int
+	// Prefix decides what a new page in this folder is called before you
+	// type anything: "none", "date" (2026-07-20-) or "datetime"
+	// (2026-07-20-1423, complete, for notes you never name). A feed folder
+	// defaults to "date" because entries want to sort chronologically.
+	Prefix string
 }
 
 // ParseFeedMarker reads a .feed file: plain "key: value" lines, with # for
@@ -296,6 +301,11 @@ func ParseFeedMarker(content []byte) FeedSettings {
 			fs.Subtitle = v
 		case "author":
 			fs.Author = v
+		case "prefix":
+			switch v {
+			case "none", "date", "datetime":
+				fs.Prefix = v
+			}
 		case "limit":
 			if n, err := strconv.Atoi(v); err == nil && n > 0 {
 				fs.Limit = n
@@ -326,7 +336,38 @@ title: %s
 subtitle:
 author: %s
 limit: %d
+# prefix: what a new page here is called before you type — none, date, or
+# datetime (a complete name, for short notes you never title)
+prefix: date
 `, title, author, limit))
+}
+
+// NamePrefix reports how new pages in a folder are named. Folders that
+// publish default to dated names; everywhere else you name the file.
+func (s *Store) NamePrefix(folder string) string {
+	if !s.IsFeedFolder(folder) {
+		return "none"
+	}
+	if p := s.FeedInfo(folder).Prefix; p != "" {
+		return p
+	}
+	return "date"
+}
+
+// NewPagePath is the filename offered when you create a page in a folder.
+// It is only ever a starting point — the editor shows it in an editable
+// field, so nothing here is irreversible or magic.
+func (s *Store) NewPagePath(folder string, now time.Time) string {
+	if !strings.HasSuffix(folder, "/") {
+		folder += "/"
+	}
+	switch s.NamePrefix(folder) {
+	case "date":
+		return folder + now.Format("2006-01-02") + "-"
+	case "datetime":
+		return s.NewStreamPath(folder, now)
+	}
+	return folder
 }
 
 // StreamPages returns a folder's pages newest-first, for rendering a stream
@@ -375,8 +416,8 @@ func (s *Store) StreamPages(folder string, limit int) []Page {
 	return out
 }
 
-// NewStreamPath invents a filename for a note posted into a stream folder:
-// dated, unique, and sorting naturally.
+// NewStreamPath invents a complete, unique, naturally-sorting filename for
+// a note posted without one — over titan, ssh, the API or MCP.
 func (s *Store) NewStreamPath(folder string, now time.Time) string {
 	if !strings.HasSuffix(folder, "/") {
 		folder += "/"

@@ -115,9 +115,9 @@ type Config struct {
 	// Highlight controls syntax highlighting of code blocks.
 	Highlight Highlight `yaml:"highlight"`
 
-	// NowFolder is where {{now}} and the "+ note" buttons write. It is an
-	// ordinary folder holding ordinary pages; the only thing "note" means
-	// is that the server picks the filename.
+	// NowFolder is where {{now}} and the note-posting doors (API, MCP, ssh,
+	// titan) write. It is an ordinary folder of ordinary pages; posting
+	// without a filename simply generates one.
 	NowFolder string `yaml:"now_folder"`
 
 	// Timezone is an IANA zone name (e.g. "America/Edmonton") used when

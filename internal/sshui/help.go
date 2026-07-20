@@ -58,7 +58,7 @@ Lines are the unit — no inline markup.
 
 * .header / .footer — gemtext included above/below every page in the folder and below
 * .css — CSS applied to the web rendering of that folder and below
-* .feed — marks the folder as publishing a feed (title, author, limit)
+* .feed — marks the folder as publishing a feed (title, author, limit, prefix)
 
 ## Front matter (optional, at the top of a page)
 

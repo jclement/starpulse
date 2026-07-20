@@ -213,11 +213,21 @@ Outside a feed folder only the first two count, so ordinary pages stay undated
 and list alphabetically. Feeds are served over HTTP *and* gemini, and each is
 advertised in the HTML `<head>`.
 
-There is no second kind of folder. A "now" page is just a folder whose files
-happen to be short and machine-named: *+ note* mints `2026-07-20-1423.gmi`
-where *+ page* would ask you for a name, and both work anywhere. `{{now}}` and
-the *+ note* button default to the folder named by `now_folder`. `index.gmi`
-and dot-files are never feed entries. Posting a note over titan is just
+There is no second kind of folder, and no second way to create. *+ page* is
+the only create action; what the new file is *called* is a property of the
+folder you create it in, set by `prefix` in its `.feed`:
+
+| `prefix` | a new page arrives as | for |
+|---|---|---|
+| `none` | `/docs/` | you name everything |
+| `date` (default when publishing) | `/posts/2026-07-20-` | posts you title |
+| `datetime` | `/now/2026-07-20-1423.gmi` | short notes you never title |
+
+The name lands in the editor's path field, so it is a starting point you can
+always edit before saving — nothing is decided for you irreversibly.
+`index.gmi` and dot-files are never feed entries. `{{now}}`, the API, MCP and
+the SSH note key write into the folder named by `now_folder`, generating a
+complete name the same way `datetime` does. Posting a note over titan is just
 uploading to a folder that publishes a feed:
 
 ```sh

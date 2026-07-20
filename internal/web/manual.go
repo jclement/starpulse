@@ -58,8 +58,9 @@ func (s *Server) adminManual(w http.ResponseWriter, r *http.Request) {
 
 	// ---- feeds -------------------------------------------------------
 	b.WriteString(`<h2>Posts and feeds</h2>
-<p>A folder publishes an Atom feed when you turn one on — the <strong>enable feed</strong> link beside it on the <a href="/admin">pages</a> screen. Nothing publishes by itself. Turning it on writes a <code>.feed</code> file in that folder holding the feed's title, author and length, which you can edit like any page.</p>
-<p>Inside a feed folder <em>every</em> page is a post, so filenames can be plain. A post's date is resolved in this order:</p>
+<p>A folder publishes an Atom feed when you turn one on — the <strong>feed on</strong> toggle at the top of that folder's screen in <a href="/admin">pages</a>. Nothing publishes by itself. Turning it on writes a <code>.feed</code> file in the folder holding the feed's title, author, length and naming rule; the toggles edit that file, and so can you.</p>
+<p>The <strong>names</strong> toggle decides what a new page in the folder is called before you type anything: <code>none</code> leaves it to you, <code>date</code> offers <code>2026-07-20-</code> for you to finish, and <code>datetime</code> offers a complete name like <code>2026-07-20-1423.gmi</code> for short notes you never title. It only ever fills the editor's path field, so you can always change it before saving.</p>
+<p>Inside a feed folder <em>every</em> page is a post — except <code>index.gmi</code> and dot-files, which are never entries. A post's date is resolved in this order:</p>
 <ol>
 <li>a <code>YYYY-MM-DD-</code> prefix on the filename — authoritative, and it sorts itself</li>
 <li>a <code>date:</code> in front matter</li>

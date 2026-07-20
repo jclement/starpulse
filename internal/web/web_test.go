@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -325,25 +326,95 @@ func TestFolderFeeds(t *testing.T) {
 	}
 }
 
-func TestNewPostLinkOnFeedFolders(t *testing.T) {
+func TestNewPageNameFollowsTheFolder(t *testing.T) {
 	_, st, ts := testServer(t)
-	_, _ = st.SavePage("/posts/"+store.FeedMarker, []byte(""), "", "t")
-	_, _ = st.SavePage("/posts/hello.gmi", []byte("# Hi"), "", "t")
+	// a folder that publishes: dated names by default
+	_, _ = st.SavePage("/posts/"+store.FeedMarker, []byte("title: Posts"), "", "t")
+	// one that names its pages completely, for notes
+	_, _ = st.SavePage("/now/"+store.FeedMarker, []byte("title: Now\nprefix: datetime"), "", "t")
+	// one that publishes but wants plain names
+	_, _ = st.SavePage("/docs/"+store.FeedMarker, []byte("title: Docs\nprefix: none"), "", "t")
+	// and a folder with no feed at all
 	_, _ = st.SavePage("/media/notes.gmi", []byte("# Notes"), "", "t")
 	client := login(t, ts, testPassword)
 
+	pathField := func(folder string) string {
+		resp, _ := client.Get(ts.URL + "/admin/edit?new=1&path=" + url.QueryEscape(folder))
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		m := regexp.MustCompile(`id="path"[^>]*value="([^"]*)"`).FindStringSubmatch(string(b))
+		if m == nil {
+			m = regexp.MustCompile(`value="([^"]*)"[^>]*id="path"`).FindStringSubmatch(string(b))
+		}
+		if m == nil {
+			t.Fatalf("no path field for %s", folder)
+		}
+		return m[1]
+	}
+
+	today := time.Now().Format("2006-01-02")
+	if got, want := pathField("/posts/"), "/posts/"+today+"-"; got != want {
+		t.Errorf("feed folder prefill = %q, want %q", got, want)
+	}
+	// datetime is a complete, saveable name — no slug to add
+	got := pathField("/now/")
+	if !regexp.MustCompile(`^/now/\d{4}-\d{2}-\d{2}-\d{4}\.gmi$`).MatchString(got) {
+		t.Errorf("notes folder prefill = %q, want a complete dated filename", got)
+	}
+	if got, want := pathField("/docs/"), "/docs/"; got != want {
+		t.Errorf("prefix:none prefill = %q, want %q", got, want)
+	}
+	if got, want := pathField("/media/"), "/media/"; got != want {
+		t.Errorf("plain folder prefill = %q, want %q", got, want)
+	}
+	// there is exactly one create action, and it is the same link everywhere
 	resp, _ := client.Get(ts.URL + "/admin")
 	b, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if !strings.Contains(string(b), `href="/admin/edit?new=1&amp;path=%2Fposts%2F"`) {
-		t.Error("no create link on the feed folder row")
+	if strings.Contains(string(b), "+ note") {
+		t.Error("a second create verb came back")
 	}
-	// names stay clean — the date comes from the database now
-	resp2, _ := client.Get(ts.URL + "/admin/edit?new=1&path=" + url.QueryEscape("/posts/"))
-	b2, _ := io.ReadAll(resp2.Body)
+	if !strings.Contains(string(b), `href="/admin/edit?new=1&amp;path=%2Fposts%2F"`) {
+		t.Error("no create link on the folder row")
+	}
+}
+
+func TestPrefixToggleEditsOnlyItsLine(t *testing.T) {
+	_, st, ts := testServer(t)
+	// a .feed with comments, an unknown key and hand-chosen ordering: a
+	// click must not flatten any of it
+	body := "# my notes\nlimit: 5\nprefix: date\nauthor: jeff\nsomething_new: 1\n"
+	_, _ = st.SavePage("/posts/"+store.FeedMarker, []byte(body), "", "t")
+	client := login(t, ts, testPassword)
+
+	form := url.Values{"folder": {"/posts/"}, "prefix": {"datetime"}}
+	resp, err := client.PostForm(ts.URL+"/admin/prefix", form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	pg, err := st.GetPage("/posts/" + store.FeedMarker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(pg.Content)
+	for _, want := range []string{"# my notes", "limit: 5", "prefix: datetime", "author: jeff", "something_new: 1"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("rewrite lost %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "prefix: date\n") {
+		t.Error("old value survived")
+	}
+	if st.NamePrefix("/posts/") != "datetime" {
+		t.Error("setting did not take effect")
+	}
+	// an unsupported value is refused rather than written
+	resp2, _ := client.PostForm(ts.URL+"/admin/prefix", url.Values{"folder": {"/posts/"}, "prefix": {"../evil"}})
 	resp2.Body.Close()
-	if !strings.Contains(string(b2), `value="/posts/"`) {
-		t.Error("new post path should be the bare folder, no date prefix")
+	if st.NamePrefix("/posts/") != "datetime" {
+		t.Error("junk value was accepted")
 	}
 }
 

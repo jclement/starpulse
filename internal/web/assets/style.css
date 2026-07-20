@@ -445,16 +445,23 @@ form.del button.linkish, form.feedtoggle button.linkish, button.linkish {
   text-decoration: none;
 }
 form.del button.linkish:hover, button.linkish:hover { text-decoration: underline; text-underline-offset: 3px; color: #b3402a; }
-/* row actions read as quiet text, not controls (must out-specify the generic
-   .linkish rule above, which paints them accent-coloured) */
-table.browse form.del button.linkish,
-dl.fset form button.linkish {
+/* Row and setting controls read as quiet text, never as buttons. These must
+   out-specify `form.inline button` (0,1,2), which paints solid — hence the
+   container class on every selector. */
+div.fset button.linkish,
+table.browse button.linkish {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  font: inherit;
   font-weight: 400;
   color: var(--dim);
   text-decoration: none;
+  cursor: pointer;
 }
-table.browse form.del button.linkish:hover,
-dl.fset form button.linkish:hover { color: #b3402a; text-decoration: underline; }
+div.fset button.linkish:hover { color: var(--accent); text-decoration: underline; }
+table.browse button.linkish:hover { color: #b3402a; text-decoration: underline; }
 a.newpost { font-weight: 400; color: var(--accent); text-decoration: none; }
 a.newpost:hover { text-decoration: underline; }
 
@@ -585,24 +592,28 @@ table.browse tr.special td:first-child a { color: var(--dim); }
 }
 p.newhere { margin: 1em 0 2em; text-align: right; }
 
-/* folder settings: label/value lines, every one of which writes a file */
-dl.fset {
-  margin: 0.4em 0 1.6em;
-  padding: 0.7em 0.9em;
+/* folder settings: one line of toggles, each writing the .feed file */
+div.fset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4em 2em;
+  margin: 0.4em 0 1.4em;
+  padding: 0.5em 0.8em;
   background: var(--pre-bg);
   border: 1px solid var(--line);
   border-radius: 6px;
   font-size: 0.9em;
+  color: var(--dim);
 }
-dl.fset > div { display: flex; gap: 0.9em; align-items: baseline; padding: 0.18em 0; }
-dl.fset dt { color: var(--dim); width: 5.5em; flex: none; }
-dl.fset dd { margin: 0; }
-dl.fset .on { color: var(--fg); }
-dl.fset a.absent { color: var(--dim); text-decoration: line-through; text-decoration-color: var(--line); }
+div.fset .grp { white-space: nowrap; }
+div.fset b { font-weight: 400; color: var(--dim); margin-right: 0.5em; }
+/* the setting in force is stated, not offered */
+div.fset .cur { color: var(--fg); font-weight: 600; text-decoration: none; }
+div.fset a.absent { color: var(--dim); text-decoration: line-through; text-decoration-color: var(--line); }
+div.fset a.absent:hover { color: var(--accent); }
 
 @media (max-width: 34rem) {
-  dl.fset > div { flex-wrap: wrap; gap: 0.3em 0.7em; }
-  dl.fset dt { width: auto; font-weight: 600; }
+  div.fset { gap: 0.3em 1.2em; }
   table.browse td { padding: 0.4em 0.35em 0.4em 0; }
   table.browse td.num { display: none; }
 }

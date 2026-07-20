@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -96,7 +97,7 @@ func (s *Server) folderScreen(b *strings.Builder, metas []store.Meta, dir string
 		}
 		fmt.Fprintf(b, `<tr class="dir-row"><td><a class="dirlink" href="/admin?dir=%s">%s</a>%s</td><td class="dim num">%d</td><td class="acts">%s</td></tr>`+"\n",
 			url.QueryEscape(sub), html.EscapeString(strings.TrimSuffix(sub[len(dir):], "/")+"/"), badge,
-			subCount[sub], newLinks(sub))
+			subCount[sub], newLink(sub))
 	}
 	for _, m := range files {
 		s.fileRow(b, m, m.Path[len(dir):])
@@ -106,7 +107,7 @@ func (s *Server) folderScreen(b *strings.Builder, metas []store.Meta, dir string
 	}
 	b.WriteString("</table>\n")
 
-	fmt.Fprintf(b, `<p class="newhere">%s</p>`+"\n", newLinks(dir))
+	fmt.Fprintf(b, `<p class="newhere">%s</p>`+"\n", newLink(dir))
 }
 
 // fileRow is one page: its name links to the editor, which is where history
@@ -134,36 +135,105 @@ func (s *Server) fileRow(b *strings.Builder, m store.Meta, label string) {
 		view, html.EscapeString(m.Path), html.EscapeString(pageFolder(m.Path)), html.EscapeString(m.Path))
 }
 
-// folderSettings is the three-line block at the top of a folder screen.
-// Every control writes a file — the .feed page — so the same settings are
-// editable over Titan or from any gemini client.
+// folderSettings is one line of toggles: what this folder publishes, what it
+// calls new pages, and which inherited files it defines. Every one of them
+// writes the .feed page, so the same settings are editable over Titan or
+// from any gemini client — and .feed itself is listed below like any other
+// file, so there is no need to link it twice.
 func (s *Server) folderSettings(b *strings.Builder, dir string) {
 	feed := s.Store.IsFeedFolder(dir)
-	b.WriteString(`<dl class="fset">` + "\n")
+	// a div, not a p: these toggles are forms, and a <form> start tag closes
+	// an open <p>, silently truncating everything after the first one
+	b.WriteString(`<div class="fset">`)
 
-	b.WriteString(`<div><dt>feed</dt><dd>`)
+	b.WriteString(`<span class="grp"><b>feed</b> `)
 	if feed {
-		fmt.Fprintf(b, `<span class="on">publishing</span> <span class="dim">·</span> `+
-			`<a href="/admin/edit?path=%s">edit .feed</a> <span class="dim">·</span> %s`,
-			url.QueryEscape(dir+store.FeedMarker), feedForm(dir, false, "stop publishing"))
+		b.WriteString(`<span class="cur">on</span> <span class="dim">·</span> ` + feedForm(dir, false, "off"))
 	} else {
-		fmt.Fprintf(b, `<span class="dim">off</span> <span class="dim">·</span> %s`, feedForm(dir, true, "publish feed"))
+		b.WriteString(feedForm(dir, true, "on") + ` <span class="dim">·</span> <span class="cur">off</span>`)
 	}
-	b.WriteString("</dd></div>\n")
+	b.WriteString(`</span>`)
 
-	b.WriteString(`<div><dt>inherits</dt><dd>`)
+	if feed {
+		now := s.Store.NewPagePath(dir, time.Now().In(s.loc()))
+		cur := s.Store.NamePrefix(dir)
+		fmt.Fprintf(b, `<span class="grp" title="a new page here arrives as %s"><b>names</b> `,
+			html.EscapeString(now))
+		for i, opt := range []string{"none", "date", "datetime"} {
+			if i > 0 {
+				b.WriteString(` <span class="dim">·</span> `)
+			}
+			if opt == cur {
+				fmt.Fprintf(b, `<span class="cur">%s</span>`, opt)
+			} else {
+				b.WriteString(prefixForm(dir, opt))
+			}
+		}
+		b.WriteString(`</span>`)
+	}
+
+	b.WriteString(`<span class="grp"><b>inherits</b> `)
 	for i, name := range []string{".header", ".footer", ".css"} {
 		if i > 0 {
 			b.WriteString(` <span class="dim">·</span> `)
 		}
 		p := dir + name
 		if _, err := s.Store.GetPage(p); err == nil {
-			fmt.Fprintf(b, `<a href="/admin/edit?path=%s">%s</a>`, url.QueryEscape(p), name)
+			fmt.Fprintf(b, `<a class="cur" href="/admin/edit?path=%s">%s</a>`, url.QueryEscape(p), name)
 		} else {
 			fmt.Fprintf(b, `<a class="absent" href="/admin/edit?new=1&amp;path=%s">%s</a>`, url.QueryEscape(p), name)
 		}
 	}
-	b.WriteString("</dd></div>\n</dl>\n")
+	b.WriteString("</span></div>\n")
+}
+
+func prefixForm(dir, value string) string {
+	return fmt.Sprintf(`<form class="inline" method="post" action="/admin/prefix">`+
+		`<input type="hidden" name="folder" value="%s"><input type="hidden" name="prefix" value="%s">`+
+		`<button class="linkish" type="submit">%s</button></form>`,
+		html.EscapeString(dir), value, value)
+}
+
+// adminPrefix rewrites the one line in .feed rather than regenerating the
+// file, so comments, ordering and any key this build does not know about
+// survive a click.
+func (s *Server) adminPrefix(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	dir := normFolder(r.FormValue("folder"))
+	value := r.FormValue("prefix")
+	switch value {
+	case "none", "date", "datetime":
+	default:
+		http.Redirect(w, r, "/admin?dir="+url.QueryEscape(dir), http.StatusSeeOther)
+		return
+	}
+	marker := dir + store.FeedMarker
+	pg, err := s.Store.GetPage(marker)
+	if err != nil {
+		http.Redirect(w, r, "/admin?dir="+url.QueryEscape(dir)+"&msg="+url.QueryEscape("no feed on "+dir), http.StatusSeeOther)
+		return
+	}
+	msg := "new pages in " + dir + " are named: " + value
+	if _, err := s.Store.SavePage(marker, []byte(setKey(string(pg.Content), "prefix", value)), "", "web"); err != nil {
+		msg = "could not update " + marker + ": " + err.Error()
+	}
+	http.Redirect(w, r, "/admin?dir="+url.QueryEscape(dir)+"&msg="+url.QueryEscape(msg), http.StatusSeeOther)
+}
+
+// setKey replaces a "key: value" line in a .feed file, or appends one.
+func setKey(body, key, value string) string {
+	re := regexp.MustCompile(`(?mi)^[ \t]*` + regexp.QuoteMeta(key) + `[ \t]*:.*$`)
+	line := key + ": " + value
+	if re.MatchString(body) {
+		return re.ReplaceAllLiteralString(body, line)
+	}
+	if body != "" && !strings.HasSuffix(body, "\n") {
+		body += "\n"
+	}
+	return body + line + "\n"
 }
 
 func feedForm(dir string, enable bool, label string) string {
@@ -173,14 +243,12 @@ func feedForm(dir string, enable bool, label string) string {
 		html.EscapeString(dir), enable, html.EscapeString(label))
 }
 
-// newLinks are the two ways to create in a folder, and the only difference
-// between a "note" and a "page": who names the file. Both work anywhere, so
-// a folder has no kind to remember.
-func newLinks(dir string) string {
-	return fmt.Sprintf(`<a class="newpost" href="/admin/edit?new=1&amp;path=%s">+ page</a>`+
-		` <span class="dim">·</span> `+
-		`<a class="newpost" href="/admin/now?folder=%s">+ note</a>`,
-		url.QueryEscape(dir), url.QueryEscape(dir))
+// newLink is the single create action. There is no second verb: the folder
+// decides what the new file is called, and you can still change it before
+// saving.
+func newLink(dir string) string {
+	return fmt.Sprintf(`<a class="newpost" href="/admin/edit?new=1&amp;path=%s">+ page</a>`,
+		url.QueryEscape(dir))
 }
 
 // searchList is the flat, folder-qualified result list — the no-JS half of
