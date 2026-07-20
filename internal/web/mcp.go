@@ -87,7 +87,10 @@ var mcpTools = []mcpTool{
 func (s *Server) registerMCP(mux *http.ServeMux) {
 	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
 		if !s.apiAuthed(r) {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="starpulse"`)
+			// tell the client where to discover the authorization server
+			w.Header().Set("WWW-Authenticate", fmt.Sprintf(
+				`Bearer realm="starpulse", resource_metadata=%q`,
+				s.baseURL(r)+"/.well-known/oauth-protected-resource"))
 			jsonErr(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}

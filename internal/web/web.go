@@ -73,7 +73,8 @@ type Server struct {
 	// Onion returns the hidden-service hostname ("" when tor is off).
 	Onion func() string
 
-	throttle *authThrottle
+	throttle   *authThrottle
+	oauthCodes *codeStore
 }
 
 const sessionCookie = "starpulse_session"
@@ -118,6 +119,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerAdmin(mux)
 	s.registerAPI(mux)
 	s.registerMCP(mux)
+	s.registerOAuth(mux)
 
 	mux.HandleFunc("/", s.handlePage)
 

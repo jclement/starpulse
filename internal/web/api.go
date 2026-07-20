@@ -26,11 +26,17 @@ func (s *Server) apiAuthed(r *http.Request) bool {
 	if !strings.HasPrefix(h, "Bearer ") {
 		return false
 	}
+	token := strings.TrimPrefix(h, "Bearer ")
+	// an OAuth access token (signed, expiring) — no throttle needed, it is
+	// unguessable and self-validating
+	if s.Sessions.Valid(token) {
+		return true
+	}
 	ip := clientIP(r)
 	if s.authGate().blocked(ip, time.Now()) {
 		return false
 	}
-	if s.Cfg.AdminPassword != "" && auth.CheckPassword(s.Cfg.AdminPassword, strings.TrimPrefix(h, "Bearer ")) {
+	if s.Cfg.AdminPassword != "" && auth.CheckPassword(s.Cfg.AdminPassword, token) {
 		s.authGate().succeed(ip)
 		return true
 	}

@@ -152,6 +152,20 @@ claude mcp add --transport http mysite https://example.org/mcp \
   --header "Authorization: Bearer <admin_password>"
 ```
 
+For clients that speak OAuth (Claude Desktop's custom connectors), starpulse
+is also its own tiny authorization server — discovery, PKCE authorization-code,
+client credentials and refresh, with the admin password as the one credential:
+
+| field | value |
+|---|---|
+| server URL | `https://example.org/mcp` |
+| client ID | `mcp` |
+| client secret | your `admin_password` |
+
+Clients that discover dynamically need no configuration at all: an
+unauthenticated `/mcp` advertises `/.well-known/oauth-protected-resource`,
+and the authorize page asks for the admin password.
+
 ## Migrating from a file tree
 
 ```sh
