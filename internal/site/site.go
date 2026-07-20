@@ -239,6 +239,12 @@ func (s *Site) pageResult(urlPath string, pg *store.Page, proto string) *Result 
 	if title == "" {
 		title = pg.Title
 	}
+	// the stored title is the raw heading text, captured at save time, so a
+	// heading containing a directive would reach <title> unexpanded while
+	// the <h1> beside it read correctly
+	if strings.Contains(title, "{{") {
+		title = strings.TrimSpace(s.expand(title, baseDir, ctx, 0))
+	}
 	return &Result{Type: PageResult, Page: &Page{
 		URLPath:    urlPath,
 		SourcePath: pg.Path,

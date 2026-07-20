@@ -278,6 +278,13 @@ func TestLatestDirective(t *testing.T) {
 		t.Errorf("a folderless {{latest}} should say so:\n%s", g)
 	}
 
+	// a directive in the heading must reach the <title> expanded too, not
+	// just the rendered body
+	save(t, st, "/t.gmi", "# Latest ({{latest /now/ date}})\n\nbody")
+	if got := sy.Resolve("/t", "").Page.Title; got != "Latest (2026-07-20)" {
+		t.Errorf("title not expanded: %q", got)
+	}
+
 	// "." is the page's own folder, so a folder's index.gmi can show its
 	// own newest entry without naming itself
 	save(t, st, "/now/index.gmi", "# Now\n\n{{latest . body}} ({{latest . date}})")

@@ -129,6 +129,23 @@
   });
 })();
 
+// "close" returns to wherever you opened the editor from — usually the
+// folder you were browsing, not the root. The href stays a real link so it
+// works without JS, and is used as the fallback when there is nothing to go
+// back to (a bookmarked or newly-opened editor tab).
+(function () {
+  var close = document.getElementById("ed-close");
+  if (!close || !document.referrer) return;
+  var from;
+  try { from = new URL(document.referrer); } catch (e) { return; }
+  if (from.origin !== location.origin || from.pathname.indexOf("/admin") !== 0) return;
+  if (from.href === location.href) return; // a save that reloaded the editor
+  close.addEventListener("click", function (e) {
+    e.preventDefault();
+    history.back();
+  });
+})();
+
 // syntax help popover: close on Escape or outside click (CSS-only otherwise)
 (function () {
   var help = document.getElementById("syntax-help");

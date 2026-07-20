@@ -157,7 +157,7 @@ var editorTpl = template.Must(template.New("editor").Parse(`<!DOCTYPE html>
 <button type="button" id="pv-toggle" hidden>preview</button>
 {{.Help}}
 {{if .OldPath}}<a class="btn quiet" href="/admin/versions?path={{.OldPath}}">history</a><a class="btn quiet" href="{{.ViewURL}}">view</a>{{end}}
-<a class="btn quiet" href="/admin">close</a>
+<a class="btn quiet" id="ed-close" href="/admin">close</a>
 </div>
 <div class="ed-main">
 <textarea name="content" id="content" spellcheck="false" placeholder="# A fresh page
