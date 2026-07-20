@@ -70,8 +70,14 @@ func New(cfg *config.Config, st *store.Store, sy *site.Site, logger *log.Logger)
 // pubkeyAuth: admin must present one of the configured authorized keys;
 // any key is fine for guests (it identifies nobody, but lets clients that
 // try pubkey first fall through gracefully).
+// adminUser decides who is asking for admin powers. Authentication and the
+// TUI must agree exactly: if one of them were case-insensitive and the other
+// were not, "Admin" would authenticate as a guest and then be handed the
+// editor. One function, used by both.
+func adminUser(u string) bool { return u == "admin" }
+
 func (s *Server) pubkeyAuth(ctx ssh.Context, key ssh.PublicKey) bool {
-	if ctx.User() != "admin" {
+	if !adminUser(ctx.User()) {
 		return true
 	}
 	for _, k := range s.adminKeys {
@@ -86,7 +92,7 @@ func (s *Server) pubkeyAuth(ctx ssh.Context, key ssh.PublicKey) bool {
 // are configured, which disables admin password auth entirely; anyone else
 // is a guest.
 func (s *Server) authenticate(ctx ssh.Context, password string) bool {
-	if ctx.User() == "admin" {
+	if adminUser(ctx.User()) {
 		if len(s.adminKeys) > 0 {
 			s.Log.Warn("admin password auth rejected (authorized_keys configured)", "remote", ctx.RemoteAddr().String())
 			return false
@@ -122,7 +128,7 @@ func (s *Server) teaHandler(sess ssh.Session) (tea.Model, []tea.ProgramOption) {
 	if h <= 0 {
 		h = 24
 	}
-	admin := sess.User() == "admin"
+	admin := adminUser(sess.User())
 	// build the renderer from TERM alone — probing the terminal (OSC/DA
 	// queries) stalls against clients that never answer
 	renderer := lipgloss.NewRenderer(sess, termenv.WithColorCache(true))

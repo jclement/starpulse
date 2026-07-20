@@ -401,3 +401,20 @@ func TestTitanPostsNotesToStreamFolder(t *testing.T) {
 		t.Error("ordinary folder upload should edit its index")
 	}
 }
+
+// An empty or blank-only allowlist must authorize nobody. The dangerous
+// shape here is a loop over an empty list that "matches" by falling through
+// to a permissive default.
+func TestEmptyFingerprintAllowlistAuthorizesNobody(t *testing.T) {
+	for _, list := range [][]string{nil, {}, {""}, {"  "}, {"::"}} {
+		cfg := &config.Config{Titan: config.Titan{Enabled: true, CertFingerprints: list}}
+		if fps := cfg.NormalizedFingerprints(); len(fps) != 0 {
+			t.Errorf("allowlist %q normalised to %q, want empty", list, fps)
+		}
+	}
+	// a configured fingerprint still matches regardless of case and colons
+	cfg := &config.Config{Titan: config.Titan{Enabled: true, CertFingerprints: []string{"AB:CD:ef"}}}
+	if got := cfg.NormalizedFingerprints(); len(got) != 1 || got[0] != "abcdef" {
+		t.Errorf("normalised = %q", got)
+	}
+}

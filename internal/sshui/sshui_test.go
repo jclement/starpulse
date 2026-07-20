@@ -482,3 +482,17 @@ func TestAdminLoginDisabledWithoutPassword(t *testing.T) {
 		t.Fatal("admin accepted with no password configured")
 	}
 }
+
+// Authentication and the TUI must agree on who "admin" is, exactly. A
+// mismatch would let a lookalike username authenticate as a guest and then
+// be handed the editor.
+func TestAdminUserIsExact(t *testing.T) {
+	if !adminUser("admin") {
+		t.Error(`"admin" should be the admin`)
+	}
+	for _, u := range []string{"Admin", "ADMIN", "admin ", " admin", "admin2", "guest", "", "root"} {
+		if adminUser(u) {
+			t.Errorf("%q was treated as the admin", u)
+		}
+	}
+}

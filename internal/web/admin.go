@@ -15,32 +15,54 @@ import (
 	"github.com/jclement/starpulse/internal/store"
 )
 
+// route is one admin endpoint. Routes are declared as data and the guard is
+// applied to all of them in one place, so a new admin screen cannot be added
+// unguarded by forgetting to wrap it — which is the one mistake in this file
+// that would be silent, and catastrophic.
+type route struct {
+	path string
+	fn   http.HandlerFunc
+}
+
+// adminRoutes is every /admin endpoint. TestEveryAdminRouteIsGated walks this
+// list and proves each one refuses an anonymous request.
+func (s *Server) adminRoutes() []route {
+	return []route{
+		{"/admin", s.adminHome},
+		{"/admin/edit", s.adminEdit},
+		{"/admin/save", s.adminSave},
+		{"/admin/delete", s.adminDelete},
+		{"/admin/versions", s.adminVersions},
+		{"/admin/version", s.adminVersion},
+		{"/admin/restore", s.adminRestore},
+		{"/admin/upload", s.adminUpload},
+		{"/admin/stats", s.adminStats},
+		{"/admin/feed", s.adminFeedToggle},
+		{"/admin/prefix", s.adminPrefix},
+		{"/admin/backup", s.adminBackup},
+		{"/admin/backup.zip", s.adminBackupZip},
+		{"/admin/backup/restore", s.adminBackupRestore},
+		{"/admin/manual", s.adminManual},
+	}
+}
+
+// requireSession is the /admin gate: a valid session cookie, checked before
+// the handler runs and before the request body is touched.
+func (s *Server) requireSession(fn http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.loggedIn(r) {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+		fn(w, r)
+	}
+}
+
 // registerAdmin wires up the /admin UI (session-cookie gated, no JS).
 func (s *Server) registerAdmin(mux *http.ServeMux) {
-	guard := func(fn http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			if !s.loggedIn(r) {
-				http.Redirect(w, r, "/login", http.StatusSeeOther)
-				return
-			}
-			fn(w, r)
-		}
+	for _, rt := range s.adminRoutes() {
+		mux.HandleFunc(rt.path, s.requireSession(rt.fn))
 	}
-	mux.HandleFunc("/admin", guard(s.adminHome))
-	mux.HandleFunc("/admin/edit", guard(s.adminEdit))
-	mux.HandleFunc("/admin/save", guard(s.adminSave))
-	mux.HandleFunc("/admin/delete", guard(s.adminDelete))
-	mux.HandleFunc("/admin/versions", guard(s.adminVersions))
-	mux.HandleFunc("/admin/version", guard(s.adminVersion))
-	mux.HandleFunc("/admin/restore", guard(s.adminRestore))
-	mux.HandleFunc("/admin/upload", guard(s.adminUpload))
-	mux.HandleFunc("/admin/stats", guard(s.adminStats))
-	mux.HandleFunc("/admin/feed", guard(s.adminFeedToggle))
-	mux.HandleFunc("/admin/prefix", guard(s.adminPrefix))
-	mux.HandleFunc("/admin/backup", guard(s.adminBackup))
-	mux.HandleFunc("/admin/backup.zip", guard(s.adminBackupZip))
-	mux.HandleFunc("/admin/backup/restore", guard(s.adminBackupRestore))
-	mux.HandleFunc("/admin/manual", guard(s.adminManual))
 }
 
 func (s *Server) adminRender(w http.ResponseWriter, r *http.Request, title, body string) {

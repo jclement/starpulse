@@ -54,26 +54,39 @@ func jsonErr(w http.ResponseWriter, status int, msg string) {
 	jsonOut(w, status, map[string]string{"error": msg})
 }
 
+// apiRoutes is every /api endpoint, declared as data for the same reason the
+// admin ones are: the guard is applied to the whole list at once.
+func (s *Server) apiRoutes() []route {
+	return []route{
+		{"/api/pages", s.apiPages},
+		{"/api/pages/", s.apiPage},
+		{"/api/search", s.apiSearch},
+		{"/api/stats", s.apiStats},
+		{"/api/now", s.apiNow},
+		{"/api/versions", s.apiVersions},
+		{"/api/restore", s.apiRestore},
+		{"/api/preview", s.apiPreview},
+	}
+}
+
+// requireToken is the /api gate: a session cookie, an OAuth access token, or
+// the admin password as a bearer token (rate-limited per IP).
+func (s *Server) requireToken(fn http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.apiAuthed(r) {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="starpulse"`)
+			jsonErr(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		fn(w, r)
+	}
+}
+
 // registerAPI wires up the /api REST endpoints (bearer token = admin password).
 func (s *Server) registerAPI(mux *http.ServeMux) {
-	guard := func(fn http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			if !s.apiAuthed(r) {
-				w.Header().Set("WWW-Authenticate", `Bearer realm="starpulse"`)
-				jsonErr(w, http.StatusUnauthorized, "unauthorized")
-				return
-			}
-			fn(w, r)
-		}
+	for _, rt := range s.apiRoutes() {
+		mux.HandleFunc(rt.path, s.requireToken(rt.fn))
 	}
-	mux.HandleFunc("/api/pages", guard(s.apiPages))
-	mux.HandleFunc("/api/pages/", guard(s.apiPage))
-	mux.HandleFunc("/api/search", guard(s.apiSearch))
-	mux.HandleFunc("/api/stats", guard(s.apiStats))
-	mux.HandleFunc("/api/now", guard(s.apiNow))
-	mux.HandleFunc("/api/versions", guard(s.apiVersions))
-	mux.HandleFunc("/api/restore", guard(s.apiRestore))
-	mux.HandleFunc("/api/preview", guard(s.apiPreview))
 }
 
 type pageJSON struct {
