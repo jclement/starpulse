@@ -72,6 +72,25 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+func TestTimezone(t *testing.T) {
+	c := Default()
+	if _, err := c.Location(); err != nil {
+		t.Errorf("empty timezone: %v", err)
+	}
+	c.Timezone = "America/Edmonton"
+	loc, err := c.Location()
+	if err != nil || loc.String() != "America/Edmonton" {
+		t.Errorf("edmonton: %v %v", loc, err)
+	}
+	if err := c.Validate(); err != nil {
+		t.Errorf("validate with valid tz: %v", err)
+	}
+	c.Timezone = "Not/AZone"
+	if err := c.Validate(); err == nil {
+		t.Error("invalid timezone validated")
+	}
+}
+
 func TestSampleParses(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "s.yaml")

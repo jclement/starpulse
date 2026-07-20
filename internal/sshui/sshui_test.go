@@ -1,6 +1,8 @@
 package sshui
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"io"
 	"net"
 	"regexp"
@@ -31,7 +33,7 @@ func startServer(t *testing.T) (*Server, *store.Store, string) {
 	cfg := config.Default()
 	cfg.Hostname = "test.example"
 	cfg.AdminPassword = adminPW
-	cfg.SSH = config.Service{Enabled: true, Addr: "127.0.0.1:0"}
+	cfg.SSH = config.SSHService{Service: config.Service{Enabled: true, Addr: "127.0.0.1:0"}}
 	cfg.DataDir = t.TempDir()
 
 	srv, err := New(cfg, st, site.New(st), log.New(io.Discard))
@@ -62,11 +64,11 @@ var ansiRe = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[
 
 // tuiSession opens a PTY shell and gives helpers to interact with the TUI.
 type tuiSession struct {
-	t      *testing.T
-	sess   *gossh.Session
-	stdin  io.WriteCloser
-	out    chan byte
-	seen   strings.Builder
+	t     *testing.T
+	sess  *gossh.Session
+	stdin io.WriteCloser
+	out   chan byte
+	seen  strings.Builder
 }
 
 func openTUI(t *testing.T, client *gossh.Client) *tuiSession {
@@ -178,8 +180,8 @@ func TestGuestBrowse(t *testing.T) {
 	ts.expect("[1] About page")
 
 	// follow the first link
-	ts.send("\t")   // select link
-	ts.send("\r")   // open
+	ts.send("\t") // select link
+	ts.send("\r") // open
 	ts.expect("About Me")
 
 	// search
@@ -330,6 +332,96 @@ func TestGuestCannotEdit(t *testing.T) {
 	ts.send("q")
 }
 
+func TestAuthorizedKeysDisablePassword(t *testing.T) {
+	// generate a client keypair
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := gossh.NewSignerFromKey(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pubLine := string(gossh.MarshalAuthorizedKey(signer.PublicKey()))
+
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	_, _ = st.SavePage("/index.gmi", []byte("# Keyed Home"), "", "t")
+
+	cfg := config.Default()
+	cfg.Hostname = "test.example"
+	cfg.AdminPassword = adminPW
+	cfg.SSH = config.SSHService{
+		Service:        config.Service{Enabled: true, Addr: "127.0.0.1:0"},
+		AuthorizedKeys: []string{pubLine},
+	}
+	cfg.DataDir = t.TempDir()
+	srv, err := New(cfg, st, site.New(st), log.New(io.Discard))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = srv.wish.Serve(ln) }()
+	defer srv.Close()
+	addr := ln.Addr().String()
+
+	// admin password must now be REJECTED even though it is correct
+	if _, err := dial(t, addr, "admin", adminPW); err == nil {
+		t.Fatal("admin password accepted despite authorized_keys")
+	}
+
+	// admin with the configured key gets in
+	c, err := gossh.Dial("tcp", addr, &gossh.ClientConfig{
+		User:            "admin",
+		Auth:            []gossh.AuthMethod{gossh.PublicKeys(signer)},
+		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
+		Timeout:         5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("admin key auth failed: %v", err)
+	}
+	c.Close()
+
+	// admin with a DIFFERENT key is rejected
+	_, otherPriv, _ := ed25519.GenerateKey(rand.Reader)
+	otherSigner, _ := gossh.NewSignerFromKey(otherPriv)
+	if _, err := gossh.Dial("tcp", addr, &gossh.ClientConfig{
+		User:            "admin",
+		Auth:            []gossh.AuthMethod{gossh.PublicKeys(otherSigner)},
+		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
+		Timeout:         5 * time.Second,
+	}); err == nil {
+		t.Fatal("unauthorized key accepted for admin")
+	}
+
+	// guests still get in with a password
+	c2, err := dial(t, addr, "guest", "anything")
+	if err != nil {
+		t.Fatalf("guest auth broken: %v", err)
+	}
+	c2.Close()
+}
+
+func TestBadAuthorizedKeyRejectedAtStartup(t *testing.T) {
+	st, _ := store.Open(":memory:")
+	defer st.Close()
+	cfg := config.Default()
+	cfg.SSH = config.SSHService{
+		Service:        config.Service{Enabled: true, Addr: "127.0.0.1:0"},
+		AuthorizedKeys: []string{"not a key"},
+	}
+	cfg.DataDir = t.TempDir()
+	if _, err := New(cfg, st, site.New(st), log.New(io.Discard)); err == nil {
+		t.Fatal("unparseable authorized key accepted")
+	}
+}
+
 func TestAdminLoginDisabledWithoutPassword(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -338,7 +430,7 @@ func TestAdminLoginDisabledWithoutPassword(t *testing.T) {
 	defer st.Close()
 	cfg := config.Default()
 	cfg.AdminPassword = ""
-	cfg.SSH = config.Service{Enabled: true, Addr: "127.0.0.1:0"}
+	cfg.SSH = config.SSHService{Service: config.Service{Enabled: true, Addr: "127.0.0.1:0"}}
 	cfg.DataDir = t.TempDir()
 	srv, err := New(cfg, st, site.New(st), log.New(io.Discard))
 	if err != nil {

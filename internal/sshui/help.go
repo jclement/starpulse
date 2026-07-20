@@ -47,6 +47,7 @@ Lines are the unit — no inline markup.
 * {{list [folder] [limit]}} — link list of a folder's pages, dated first, newest first
 * {{include /path}} — another page's content, inline
 * {{now [limit]}} — latest now-posts (0 = all)
+* {{latest_now}} / {{latest_now_date}} — just the newest now-post's text / date (inline)
 * {{random /path}} — one random non-empty line from a file
 * {{count}} — the page's view counter
 * {{rev}} — the page's revision number

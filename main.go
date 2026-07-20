@@ -12,6 +12,7 @@ import (
 	"os"
 	"syscall"
 	"time"
+	_ "time/tzdata" // embed the IANA zone db (containers, bare systems)
 
 	"github.com/charmbracelet/log"
 	"golang.org/x/term"

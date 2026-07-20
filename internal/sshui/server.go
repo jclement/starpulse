@@ -6,6 +6,7 @@ package sshui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/charmbracelet/wish/activeterm"
 	btm "github.com/charmbracelet/wish/bubbletea"
 	"github.com/muesli/termenv"
+	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/jclement/starpulse/internal/auth"
 	"github.com/jclement/starpulse/internal/config"
@@ -32,22 +34,26 @@ type Server struct {
 	Site  *site.Site
 	Log   *log.Logger
 
-	wish *ssh.Server
+	wish      *ssh.Server
+	adminKeys []ssh.PublicKey
 }
 
 // New builds the wish server (host key persisted in the data dir).
 func New(cfg *config.Config, st *store.Store, sy *site.Site, logger *log.Logger) (*Server, error) {
 	s := &Server{Cfg: cfg, Store: st, Site: sy, Log: logger}
+	for i, line := range cfg.SSH.AuthorizedKeys {
+		key, _, _, _, err := gossh.ParseAuthorizedKey([]byte(line))
+		if err != nil {
+			return nil, fmt.Errorf("ssh authorized_keys[%d] unparseable: %w", i, err)
+		}
+		s.adminKeys = append(s.adminKeys, key)
+	}
 
 	srv, err := wish.NewServer(
 		wish.WithAddress(cfg.SSH.Addr),
 		wish.WithHostKeyPath(filepath.Join(cfg.DataDir, "ssh_host_ed25519")),
 		wish.WithPasswordAuth(s.authenticate),
-		// accept any public key: it identifies nobody, but lets clients that
-		// insist on trying pubkey auth first fall through gracefully as guest
-		wish.WithPublicKeyAuth(func(ctx ssh.Context, key ssh.PublicKey) bool {
-			return ctx.User() != "admin"
-		}),
+		wish.WithPublicKeyAuth(s.pubkeyAuth),
 		wish.WithMiddleware(
 			btm.Middleware(s.teaHandler),
 			activeterm.Middleware(),
@@ -61,9 +67,30 @@ func New(cfg *config.Config, st *store.Store, sy *site.Site, logger *log.Logger)
 	return s, nil
 }
 
-// authenticate: "admin" needs the admin password; anyone else is a guest.
+// pubkeyAuth: admin must present one of the configured authorized keys;
+// any key is fine for guests (it identifies nobody, but lets clients that
+// try pubkey first fall through gracefully).
+func (s *Server) pubkeyAuth(ctx ssh.Context, key ssh.PublicKey) bool {
+	if ctx.User() != "admin" {
+		return true
+	}
+	for _, k := range s.adminKeys {
+		if ssh.KeysEqual(k, key) {
+			return true
+		}
+	}
+	return false
+}
+
+// authenticate: "admin" needs the admin password — unless authorized_keys
+// are configured, which disables admin password auth entirely; anyone else
+// is a guest.
 func (s *Server) authenticate(ctx ssh.Context, password string) bool {
 	if ctx.User() == "admin" {
+		if len(s.adminKeys) > 0 {
+			s.Log.Warn("admin password auth rejected (authorized_keys configured)", "remote", ctx.RemoteAddr().String())
+			return false
+		}
 		if s.Cfg.AdminPassword == "" {
 			return false
 		}

@@ -68,11 +68,20 @@ type Server struct {
 	Site     *site.Site
 	Log      *log.Logger
 	Sessions *auth.Sessions
+	// Loc is the timezone for displayed timestamps (nil = server local).
+	Loc *time.Location
 	// Onion returns the hidden-service hostname ("" when tor is off).
 	Onion func() string
 }
 
 const sessionCookie = "starpulse_session"
+
+func (s *Server) loc() *time.Location {
+	if s.Loc != nil {
+		return s.Loc
+	}
+	return time.Local
+}
 
 func (s *Server) onion() string {
 	if s.Onion != nil {

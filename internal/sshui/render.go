@@ -81,11 +81,11 @@ func renderDoc(st *styles, src string, width int, selected int) (lines []string,
 			// rune/width-aware truncation — never split multibyte glyphs
 			lines = append(lines, st.pre.Render(ansi.Truncate(l.Text, width, "")))
 		case gemtext.Heading1:
-			lines = append(lines, wrap(st.h1, l.Text)...)
+			lines = append(lines, wrap(st.h1, "# "+l.Text)...)
 		case gemtext.Heading2:
-			lines = append(lines, wrap(st.h2, "▸ "+l.Text)...)
+			lines = append(lines, wrap(st.h2, "## "+l.Text)...)
 		case gemtext.Heading3:
-			lines = append(lines, wrap(st.h3, "· "+l.Text)...)
+			lines = append(lines, wrap(st.h3, "### "+l.Text)...)
 		case gemtext.ListItem:
 			for i, ln := range wrap(st.text, l.Text) {
 				if i == 0 {

@@ -66,6 +66,9 @@ func Serve(cfg *config.Config, logger *log.Logger) error {
 	_ = st.SetSetting("session_secret", secret)
 
 	sy := site.New(st)
+	if loc, err := cfg.Location(); err == nil {
+		sy.Loc = loc
+	}
 
 	// hidden service: managed tor, or an externally-managed onion hostname
 	var torMgr *tor.Manager
@@ -130,6 +133,7 @@ func Serve(cfg *config.Config, logger *log.Logger) error {
 			Site:     sy,
 			Log:      logger.With("proto", "web"),
 			Sessions: sessions,
+			Loc:      sy.Loc,
 			Onion:    onion,
 		}
 		go func() { errCh <- webSrv.Serve() }()

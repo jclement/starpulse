@@ -77,7 +77,7 @@ func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
 		}
 		fmt.Fprintf(&b, `<tr><td><a href="/admin/edit?path=%s">%s</a></td><td>%s</td><td class="right dim">%s</td><td class="dim">%s</td><td class="dim">%s · <a href="/admin/versions?path=%s">history</a></td></tr>`+"\n",
 			url.QueryEscape(m.Path), html.EscapeString(m.Path), html.EscapeString(title),
-			sizeStr(m.Size), m.Updated.Format("2006-01-02 15:04"), view, url.QueryEscape(m.Path))
+			sizeStr(m.Size), m.Updated.In(s.loc()).Format("2006-01-02 15:04"), view, url.QueryEscape(m.Path))
 	}
 	b.WriteString("</table>\n")
 	b.WriteString(`<p class="dim">Special files: <code>.header</code> and <code>.footer</code> (gemtext, inherited down folders), <code>.theme</code> (CSS, inherited down folders). Create them like any page, e.g. <code>/posts/.header</code>.</p>`)
@@ -94,7 +94,6 @@ func sizeStr(n int64) string {
 		return fmt.Sprintf("%dB", n)
 	}
 }
-
 
 // editorHelpHTML is the syntax cheat-sheet shown by the editor's "syntax"
 // popover. Kept out of the template so directive braces stay literal.
@@ -116,6 +115,8 @@ preformatted block (alt text after the first fence)
 <tr><td><code>{{list [folder] [limit]}}</code></td><td>link list of a folder&#39;s pages, dated first, newest first</td></tr>
 <tr><td><code>{{include /path}}</code></td><td>another page&#39;s content, inline</td></tr>
 <tr><td><code>{{now [limit]}}</code></td><td>latest now-posts (0 = all)</td></tr>
+<tr><td><code>{{latest_now}}</code></td><td>just the newest now-post&#39;s text (inline)</td></tr>
+<tr><td><code>{{latest_now_date}}</code></td><td>the newest now-post&#39;s date (inline)</td></tr>
 <tr><td><code>{{random /path}}</code></td><td>one random non-empty line from a file</td></tr>
 <tr><td><code>{{count}}</code></td><td>this page&#39;s view counter</td></tr>
 <tr><td><code>{{rev}}</code></td><td>this page&#39;s revision number</td></tr>
@@ -275,7 +276,7 @@ func (s *Server) adminVersions(w http.ResponseWriter, r *http.Request) {
 		b.WriteString(`<table class="admin"><tr><th>saved</th><th>author</th><th class="right">size</th><th></th></tr>` + "\n")
 		for _, v := range versions {
 			fmt.Fprintf(&b, `<tr><td>%s</td><td>%s</td><td class="right dim">%s</td><td><a href="/admin/version?id=%d">view</a> · <form class="inline" method="post" action="/admin/restore"><input type="hidden" name="id" value="%d"><button class="quiet" type="submit">restore</button></form></td></tr>`+"\n",
-				v.SavedAt.Format("2006-01-02 15:04:05"), html.EscapeString(v.Author), sizeStr(v.Size), v.ID, v.ID)
+				v.SavedAt.In(s.loc()).Format("2006-01-02 15:04:05"), html.EscapeString(v.Author), sizeStr(v.Size), v.ID, v.ID)
 		}
 		b.WriteString("</table>\n")
 	}
@@ -290,7 +291,7 @@ func (s *Server) adminVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "<h1>%s @ %s</h1>\n%s", html.EscapeString(v.Path), v.SavedAt.Format("2006-01-02 15:04:05"), adminNav())
+	fmt.Fprintf(&b, "<h1>%s @ %s</h1>\n%s", html.EscapeString(v.Path), v.SavedAt.In(s.loc()).Format("2006-01-02 15:04:05"), adminNav())
 	if strings.HasPrefix(v.Mime, "text/") || strings.Contains(v.Mime, "json") || strings.Contains(v.Mime, "xml") {
 		fmt.Fprintf(&b, "<pre>%s</pre>\n", html.EscapeString(string(v.Content)))
 	} else {
@@ -390,7 +391,7 @@ func (s *Server) adminNow(w http.ResponseWriter, r *http.Request) {
 </form>`)
 	for _, p := range posts {
 		fmt.Fprintf(&b, `<div class="hit"><p class="dim">%s · <form class="inline" method="post" action="/admin/now/delete"><input type="hidden" name="id" value="%d"><button class="quiet" type="submit">delete</button></form></p><pre>%s</pre></div>`+"\n",
-			p.Created.Format("2006-01-02 15:04"), p.ID, html.EscapeString(p.Content))
+			p.Created.In(s.loc()).Format("2006-01-02 15:04"), p.ID, html.EscapeString(p.Content))
 	}
 	b.WriteString(`<p class="dim">Embed the latest posts in any page with <code>{{now 3}}</code> — or make a page like <code>/now.gmi</code> containing <code>{{now 0}}</code> to list them all.</p>`)
 	s.adminRender(w, r, "now", b.String())

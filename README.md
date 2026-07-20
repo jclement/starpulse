@@ -85,6 +85,7 @@ tor:
   enabled: true                # runs a private tor, registers the onion for you
   # onion: xyz.onion           # or point at an externally-managed hidden service
 
+timezone: "America/Edmonton"  # IANA zone for displayed timestamps (empty = server local)
 max_upload_bytes: 10485760
 keep_versions: 25
 ```
@@ -110,6 +111,7 @@ Dated filenames get listed newest-first and feed `/feed.xml`.
 | `{{list [folder] [limit]}}` | link list of a folder's pages (dated first, newest first) |
 | `{{include /path}}` | another page's content, inline |
 | `{{now [limit]}}` | your latest "now" micro-posts |
+| `{{latest_now}}` / `{{latest_now_date}}` | just the newest now-post's text / date (inline) |
 | `{{random /path}}` | one random line from a file (taglines!) |
 | `{{count}}` | the page's view counter |
 | `{{rev}}` | the page's revision number (edits so far) |
@@ -134,7 +136,9 @@ is at `/search` on both protocols.
   `gemini://host/raw/<path>` with the same cert). Zero-byte upload = delete.
 - **REST**: `Authorization: Bearer <admin_password>`; see `/api/pages`,
   `/api/search`, `/api/now`, `/api/versions`, `/api/stats`.
-- **SSH**: `ssh admin@host -p 2222` (admin password) drops you into the TUI
+- **SSH**: `ssh admin@host` (admin password — or list `authorized_keys` under
+  `ssh:` in the config for key-only auth, which disables admin passwords over
+  SSH entirely) drops you into the TUI
   browser with editing — `e` edits the page you're reading, `c` creates a page,
   `n` posts a now update, `x` deletes, `ctrl+s` saves. `ssh guest@host -p 2222`
   gives read-only browsing (tab/enter to follow links, `/` to search).

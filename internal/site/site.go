@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jclement/starpulse/internal/store"
 )
@@ -52,10 +53,19 @@ type Result struct {
 // Site renders pages from a store.
 type Site struct {
 	Store *store.Store
+	// Loc is the timezone for displayed timestamps (nil = server local).
+	Loc *time.Location
 }
 
 // New creates a Site.
 func New(st *store.Store) *Site { return &Site{Store: st} }
+
+func (s *Site) loc() *time.Location {
+	if s.Loc != nil {
+		return s.Loc
+	}
+	return time.Local
+}
 
 // CleanURL validates and normalizes a request path; ok=false means reject.
 // Dot-prefixed segments (special files) are never directly addressable.
@@ -293,7 +303,6 @@ func (s *Site) syntheticListing(dir, proto string) *Result {
 	}}
 }
 
-
 // ---- directives ---------------------------------------------------------
 
 var lineDirectiveRe = regexp.MustCompile(`(?m)^\{\{\s*(list|index|include|random|now)(?:\s+([^\s}]+))?(?:\s+(\d+))?\s*\}\}\s*$`)
@@ -323,6 +332,16 @@ func (s *Site) expand(body, baseDir string, ctx expandCtx, depth int) string {
 	}
 	if strings.Contains(body, "{{count}}") {
 		body = strings.ReplaceAll(body, "{{count}}", fmt.Sprintf("%d", s.Store.Count(canonicalKey(ctx.urlPath))))
+	}
+	if strings.Contains(body, "{{latest_now") {
+		post := s.latestNow()
+		content, date := "", ""
+		if post != nil {
+			content = strings.TrimSpace(post.Content)
+			date = post.Created.In(s.loc()).Format("2006-01-02")
+		}
+		body = strings.ReplaceAll(body, "{{latest_now_date}}", date)
+		body = strings.ReplaceAll(body, "{{latest_now}}", content)
 	}
 
 	return lineDirectiveRe.ReplaceAllStringFunc(body, func(m string) string {
@@ -397,9 +416,18 @@ func resolveRef(baseDir, ref string) string {
 // "recently" on synthetic pages.
 func (s *Site) updatedString(ctx expandCtx) string {
 	if ctx.page != nil {
-		return ctx.page.Updated.Format("2006-01-02")
+		return ctx.page.Updated.In(s.loc()).Format("2006-01-02")
 	}
 	return "recently"
+}
+
+// latestNow returns the newest now-post, or nil.
+func (s *Site) latestNow() *store.NowPost {
+	posts, err := s.Store.ListNow(1)
+	if err != nil || len(posts) == 0 {
+		return nil
+	}
+	return &posts[0]
 }
 
 // revString renders {{rev}}: the served page's revision number (saved
@@ -530,7 +558,7 @@ func (s *Site) renderNow(limit int) string {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		fmt.Fprintf(&b, "### %s\n\n%s\n", p.Created.Format("2006-01-02 15:04"), strings.TrimSpace(p.Content))
+		fmt.Fprintf(&b, "### %s\n\n%s\n", p.Created.In(s.loc()).Format("2006-01-02 15:04"), strings.TrimSpace(p.Content))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

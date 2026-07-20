@@ -256,6 +256,40 @@ func timeNowDate() string {
 	return time.Now().Format("2006-01-02")
 }
 
+func TestLatestNowAndTimezone(t *testing.T) {
+	sy, st := testSite(t)
+	// empty state renders empty tokens, not errors
+	save(t, st, "/a.gmi", "# A\n\nlatest: {{latest_now}} on {{latest_now_date}}!")
+	g := sy.Resolve("/a", "").Page.Gemtext
+	if !strings.Contains(g, "latest:  on !") {
+		t.Errorf("empty latest_now wrong:\n%s", g)
+	}
+
+	_, _ = st.AddNow("older post")
+	post, _ := st.AddNow("the newest post")
+
+	// fixed zone far from UTC to prove conversion happens
+	loc := time.FixedZone("TEST", -7*3600)
+	sy.Loc = loc
+
+	g = sy.Resolve("/a", "").Page.Gemtext
+	wantDate := post.Created.In(loc).Format("2006-01-02")
+	if !strings.Contains(g, "latest: the newest post on "+wantDate+"!") {
+		t.Errorf("latest_now wrong (want date %s):\n%s", wantDate, g)
+	}
+	if strings.Contains(g, "older post") {
+		t.Errorf("latest_now leaked older post:\n%s", g)
+	}
+
+	// {{now}} listing uses the same zone
+	save(t, st, "/b.gmi", "# B\n\n{{now 1}}")
+	g = sy.Resolve("/b", "").Page.Gemtext
+	wantStamp := post.Created.In(loc).Format("2006-01-02 15:04")
+	if !strings.Contains(g, wantStamp) {
+		t.Errorf("now listing not in configured zone (want %s):\n%s", wantStamp, g)
+	}
+}
+
 func TestListEntryTitlesAndDirs(t *testing.T) {
 	sy, st := testSite(t)
 	save(t, st, "/stuff/index.gmi", "# All the stuff")

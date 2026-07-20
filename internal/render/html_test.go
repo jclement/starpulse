@@ -20,11 +20,11 @@ Some <script>alert(1)</script> text
 
 	for _, want := range []string{
 		"<h1>Title</h1>",
-		"&lt;script&gt;",                // escaped
-		`<a href="/page">Internal</a>`,  // .gmi stripped for web
-		`class="ext"`,                   // external marker
-		`class="gem"`,                   // gemini marker
-		`<img src="/media/cat.png"`,     // image inlined
+		"&lt;script&gt;",                          // escaped
+		`<a href="/page">Internal</a>`,            // .gmi stripped for web
+		`class="ext"`,                             // external marker
+		`class="gem"`,                             // gemini marker
+		`<img src="/media/cat.png"`,               // image inlined
 		"<ul>\n<li>one</li>\n<li>two</li>\n</ul>", // list grouping
 		"<blockquote>wise words</blockquote>",
 		"code &lt;b&gt;",

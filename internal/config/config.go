@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -23,6 +24,15 @@ type HTTPSService struct {
 	Service   `yaml:",inline"`
 	ACME      bool   `yaml:"acme"`
 	ACMEEmail string `yaml:"acme_email"`
+}
+
+// SSHService configures the SSH TUI door.
+type SSHService struct {
+	Service `yaml:",inline"`
+	// AuthorizedKeys holds public keys (authorized_keys format) allowed to
+	// log in as admin. When any are set, admin PASSWORD auth over SSH is
+	// disabled — keys only. Guests are unaffected.
+	AuthorizedKeys []string `yaml:"authorized_keys"`
 }
 
 // Titan configures titan:// uploads over the gemini listener.
@@ -55,12 +65,17 @@ type Config struct {
 	HTTPS  HTTPSService `yaml:"https"`
 	// SSH serves a TUI gemini browser (and, for the admin user, a
 	// full-screen editor) over ssh.
-	SSH Service `yaml:"ssh"`
+	SSH SSHService `yaml:"ssh"`
 	// Telnet serves the same TUI browser read-only (guest, no auth).
 	Telnet Service `yaml:"telnet"`
 
 	Titan Titan `yaml:"titan"`
 	Tor   Tor   `yaml:"tor"`
+
+	// Timezone is an IANA zone name (e.g. "America/Edmonton") used when
+	// rendering timestamps (now-posts, {{updated}}, admin displays).
+	// Empty = the server's local time.
+	Timezone string `yaml:"timezone"`
 
 	// MaxUploadBytes caps a single file upload (web, api, mcp, titan).
 	MaxUploadBytes int64 `yaml:"max_upload_bytes"`
@@ -79,7 +94,7 @@ func Default() *Config {
 		Gemini:   Service{Enabled: true, Addr: ":1965"},
 		HTTP:     Service{Enabled: true, Addr: ":80"},
 		HTTPS:    HTTPSService{Service: Service{Enabled: false, Addr: ":443"}, ACME: true},
-		SSH:      Service{Enabled: false, Addr: ":2222"},
+		SSH:      SSHService{Service: Service{Enabled: false, Addr: ":2222"}},
 		Telnet:   Service{Enabled: false, Addr: ":23"},
 		Titan:    Titan{Enabled: false},
 		Tor:      Tor{Enabled: false, Binary: "tor"},
@@ -165,6 +180,7 @@ func applyEnv(c *Config) {
 	}
 
 	str("STARPULSE_HOSTNAME", &c.Hostname)
+	str("STARPULSE_TIMEZONE", &c.Timezone)
 	str("STARPULSE_ADMIN_PASSWORD", &c.AdminPassword)
 	str("STARPULSE_DATA_DIR", &c.DataDir)
 
@@ -212,6 +228,9 @@ func (c *Config) Validate() error {
 	if c.Hostname == "" {
 		return fmt.Errorf("hostname must be set")
 	}
+	if _, err := c.Location(); err != nil {
+		return fmt.Errorf("invalid timezone %q: %w", c.Timezone, err)
+	}
 	if c.Titan.Enabled && len(c.NormalizedFingerprints()) == 0 {
 		return fmt.Errorf("titan enabled but no cert_fingerprints configured")
 	}
@@ -219,6 +238,14 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("no services enabled")
 	}
 	return nil
+}
+
+// Location resolves the configured timezone (server local when unset).
+func (c *Config) Location() (*time.Location, error) {
+	if c.Timezone == "" {
+		return time.Local, nil
+	}
+	return time.LoadLocation(c.Timezone)
 }
 
 // Sample renders an annotated sample config.
@@ -254,6 +281,10 @@ https:
 ssh:
   enabled: false
   addr: ":2222"
+  # Public keys allowed to log in as admin. When any are listed, admin
+  # password auth over SSH is DISABLED (keys only). Guests are unaffected.
+  authorized_keys: []
+  #  - "ssh-ed25519 AAAA... you@laptop"
 
 # Telnet door: same TUI browser, read-only guest, no encryption — retro fun.
 telnet:
@@ -271,6 +302,10 @@ tor:
   enabled: false
   binary: tor
   # onion: xyz.onion     # set instead if tor is managed outside starpulse
+
+# IANA timezone for displayed timestamps (now-posts, {{updated}}, admin).
+# Empty = server local time.
+timezone: ""
 
 max_upload_bytes: 10485760
 keep_versions: 25
