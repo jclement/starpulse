@@ -27,7 +27,7 @@ func TestCleanPath(t *testing.T) {
 		{"index.gmi", "/index.gmi", true},
 		{"/posts/2026-01-01-hi.gmi", "/posts/2026-01-01-hi.gmi", true},
 		{"/posts/.header", "/posts/.header", true},
-		{"/.theme", "/.theme", true},
+		{"/.css", "/.css", true},
 		{"/../etc/passwd", "", false},
 		{"/a/../../b", "", false},
 		{"/.hidden/дir/x", "", false},
@@ -260,7 +260,7 @@ func TestMimeFor(t *testing.T) {
 	cases := map[string]string{
 		"/a.gmi":     "text/gemini; charset=utf-8",
 		"/x/.header": "text/gemini; charset=utf-8",
-		"/x/.theme":  "text/css; charset=utf-8",
+		"/x/.css":    "text/css; charset=utf-8",
 		"/a.png":     "image/png",
 		"/a.txt":     "text/plain; charset=utf-8",
 		"/a.unknown": "application/octet-stream",
@@ -279,7 +279,7 @@ func TestDefaultExtAndTextMime(t *testing.T) {
 		"/about.gmi":           "/about.gmi",
 		"/media/cat.png":       "/media/cat.png",
 		"/posts/.header":       "/posts/.header",
-		"/.theme":              "/.theme",
+		"/.css":                "/.css",
 	}
 	for in, want := range cases {
 		if got := DefaultExt(in); got != want {

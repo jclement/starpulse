@@ -371,7 +371,7 @@ func (m *model) allURLs() []string {
 			continue // can't be displayed in a text browser
 		}
 		if strings.HasPrefix(pathBase(mm.Path), ".") {
-			// .header/.footer/.theme aren't browsable, but an admin should
+			// .header/.footer/.css aren't browsable, but an admin should
 			// still be able to jump straight to editing one
 			if m.admin {
 				out = append(out, mm.Path)

@@ -37,7 +37,7 @@ func TestCleanURL(t *testing.T) {
 		{"/posts/", "/posts/", true},
 		{"/posts/../x", "", false},
 		{"/.header", "", false},
-		{"/posts/.theme", "", false},
+		{"/posts/.css", "", false},
 		{"/a//b", "/a/b", true},
 	}
 	for _, c := range cases {
@@ -95,8 +95,8 @@ func TestHeaderFooterThemeInheritance(t *testing.T) {
 	sy, st := testSite(t)
 	save(t, st, "/.header", "=> / HOME-LINK")
 	save(t, st, "/.footer", "root footer")
-	save(t, st, "/.theme", "body { color: red }")
-	save(t, st, "/posts/.theme", "body { color: blue }")
+	save(t, st, "/.css", "body { color: red }")
+	save(t, st, "/posts/.css", "body { color: blue }")
 	save(t, st, "/index.gmi", "# Home")
 	save(t, st, "/posts/one.gmi", "# One")
 

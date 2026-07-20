@@ -78,7 +78,7 @@ func TestPageServing(t *testing.T) {
 	_, st, ts := testServer(t)
 	_, _ = st.SavePage("/index.gmi", []byte("# Web Home\n=> /about.gmi About"), "", "t")
 	_, _ = st.SavePage("/about.gmi", []byte("# About"), "", "t")
-	_, _ = st.SavePage("/.theme", []byte("body{--x:1}"), "", "t")
+	_, _ = st.SavePage("/.css", []byte("body{--x:1}"), "", "t")
 	_, _ = st.SavePage("/file.txt", []byte("hi"), "", "t")
 
 	code, body := get(t, ts, "/")
@@ -110,7 +110,7 @@ func TestPageServing(t *testing.T) {
 		t.Errorf("missing = %d", code)
 	}
 	// hidden specials not served
-	if code, _ := get(t, ts, "/.theme"); code != 404 {
+	if code, _ := get(t, ts, "/.css"); code != 404 {
 		t.Errorf("hidden = %d", code)
 	}
 	// stats bumped under http
@@ -824,7 +824,7 @@ func TestEditorSyntaxHelp(t *testing.T) {
 		"{{list [folder] [limit]}}",
 		"{{include /path}}",
 		"{{rev}}",
-		".theme",
+		".css",
 		"header: none",
 	} {
 		if !strings.Contains(body, want) {

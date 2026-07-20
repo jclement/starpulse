@@ -1,5 +1,5 @@
 // Package site resolves URL paths against the page store and assembles
-// gemtext documents: inherited .header/.footer, folder .theme CSS, and
+// gemtext documents: inherited .header/.footer, folder .css, and
 // {{...}} directives ({{list}}, {{include}}, {{now}}, {{count}}, …).
 package site
 
@@ -39,7 +39,7 @@ type Page struct {
 	SourcePath string // storage path of the body ("" for synthetic pages)
 	Title      string
 	Gemtext    string // assembled: header + body + footer, directives expanded
-	Theme      string // inherited .theme CSS ("" if none)
+	Theme      string // inherited .css ("" if none)
 }
 
 // Result is the outcome of resolving a URL path.
@@ -243,7 +243,7 @@ func (s *Site) pageResult(urlPath string, pg *store.Page, proto string) *Result 
 		SourcePath: pg.Path,
 		Title:      title,
 		Gemtext:    joinChunks(parts),
-		Theme:      s.themeFor(pg.Path),
+		Theme:      s.nearestSpecial(pg.Path, ".css"),
 	}}
 }
 
@@ -268,7 +268,7 @@ func canonicalKey(urlPath string) string {
 }
 
 // nearestSpecial finds the closest special file (".header", ".footer",
-// ".theme") at or above the page's directory. Front matter is stripped;
+// ".css") at or above the page's directory. Front matter is stripped;
 // directive expansion is the caller's job.
 func (s *Site) nearestSpecial(pagePath, name string) string {
 	dir := path.Dir(pagePath)
@@ -286,14 +286,6 @@ func (s *Site) nearestSpecial(pagePath, name string) string {
 		}
 		dir = path.Dir(dir)
 	}
-}
-
-// themeFor finds the nearest stylesheet: ".css", or the older ".theme".
-func (s *Site) themeFor(pagePath string) string {
-	if css := s.nearestSpecial(pagePath, ".css"); css != "" {
-		return css
-	}
-	return s.nearestSpecial(pagePath, ".theme")
 }
 
 // syntheticListing renders a directory with no index.gmi as a listing page.
@@ -320,7 +312,7 @@ func (s *Site) syntheticListing(dir, proto string) *Result {
 		URLPath: dir,
 		Title:   name,
 		Gemtext: joinChunks(parts),
-		Theme:   s.themeFor(anchor),
+		Theme:   s.nearestSpecial(anchor, ".css"),
 	}}
 }
 

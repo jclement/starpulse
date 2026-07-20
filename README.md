@@ -237,7 +237,7 @@ JavaScript. The language comes from the fence's alt text — 297 lexers via
 [chroma](https://github.com/alecthomas/chroma). Blocks with no alt text, and
 decorative ones (`banner`, `table`), are left alone.
 
-The admin editor highlights as you type too: gemtext, CSS in a `.theme`, and
+The admin editor highlights as you type too: gemtext, CSS in a `.css`, and
 the `key: value` special files — hand-rolled, no editor library.
 
 ---

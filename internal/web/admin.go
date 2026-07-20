@@ -149,7 +149,7 @@ func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
 		b.WriteString("</tbody>\n")
 	}
 	b.WriteString("</table>\n")
-	b.WriteString(`<p class="dim">Special files: <code>.header</code> and <code>.footer</code> (gemtext, inherited down folders), <code>.theme</code> (CSS, inherited down folders). Create them like any page, e.g. <code>/posts/.header</code>.</p>`)
+	b.WriteString(`<p class="dim">Special files: <code>.header</code> and <code>.footer</code> (gemtext, inherited down folders), <code>.css</code> (CSS, inherited down folders). Create them like any page, e.g. <code>/posts/.header</code>.</p>`)
 	s.adminRender(w, r, "pages", b.String())
 }
 
@@ -220,7 +220,7 @@ preformatted block (alt text after the first fence)
 <h3>Special files (inherited down folders)</h3>
 <table>
 <tr><td><code>.header</code> / <code>.footer</code></td><td>gemtext above/below every page in the folder &amp; below</td></tr>
-<tr><td><code>.theme</code></td><td>CSS applied to the web rendering of the folder &amp; below</td></tr>
+<tr><td><code>.css</code></td><td>CSS applied to the web rendering of the folder &amp; below</td></tr>
 </table>
 <h3>Front matter (optional, top of page)</h3>
 <pre>---
@@ -256,7 +256,7 @@ var editorTpl = template.Must(template.New("editor").Parse(`<!DOCTYPE html>
 <div class="ed-main">
 <textarea name="content" id="content" spellcheck="false" placeholder="# A fresh page
 
-Gemtext goes here — or CSS if the path is a .theme file.
+Gemtext goes here — or CSS if the path is a .css file.
 
 Directives: {{"{{"}}list [folder] [limit]{{"}}"}} · {{"{{"}}include /path{{"}}"}} · {{"{{"}}now [limit]{{"}}"}} · {{"{{"}}random /path{{"}}"}} · {{"{{"}}count{{"}}"}} · {{"{{"}}rev{{"}}"}} · {{"{{"}}updated{{"}}"}}"{{if .Path}} autofocus{{end}}>{{.Content}}</textarea>
 <div id="pv-pane" class="ed-preview" hidden><div id="preview"></div></div>
@@ -293,7 +293,7 @@ func (s *Server) adminEdit(w http.ResponseWriter, r *http.Request) {
 				author = s.Cfg.Hostname
 			}
 			content = string(store.DefaultFeedMarker(strings.Trim(pageFolder(p), "/"), author, 30, false))
-		case strings.HasSuffix(p, ".css"), strings.HasSuffix(p, ".theme"):
+		case strings.HasSuffix(p, ".css"):
 			content = defaultThemeCSS()
 		}
 	}

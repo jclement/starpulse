@@ -2,9 +2,9 @@ package web
 
 import "strings"
 
-// defaultThemeCSS returns a starting point for a .theme file: the site's own
+// defaultThemeCSS returns a starting point for a .css file: the site's own
 // colour variables, lifted from the embedded stylesheet so they always match
-// what is actually shipping. A .theme is injected after the stylesheet, so
+// what is actually shipping. A .css is injected after the stylesheet, so
 // redefining these is all most themes need.
 func defaultThemeCSS() string {
 	css, err := assets.ReadFile("assets/style.css")

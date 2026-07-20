@@ -62,8 +62,8 @@ var mcpTools = []mcpTool{
 	{"list_pages", "List every page and file on the site (path, title, mime, size).", schema(nil, obj())},
 	{"read_page", "Read a page's raw source (gemtext for pages, base64 for binary files).", schema([]string{"path"}, obj(
 		"path", obj("type", "string", "description", "Storage path, e.g. /index.gmi or /posts/.header")))},
-	{"write_page", "Create or update a page with gemtext (or CSS for .theme files). Previous content is kept as a restorable version.", schema([]string{"path", "content"}, obj(
-		"path", obj("type", "string", "description", "Storage path, e.g. /about.gmi, /posts/2026-07-19-hi.gmi, /.theme. A path with no extension gets .gmi."),
+	{"write_page", "Create or update a page with gemtext (or CSS for .css files). Previous content is kept as a restorable version.", schema([]string{"path", "content"}, obj(
+		"path", obj("type", "string", "description", "Storage path, e.g. /about.gmi, /posts/2026-07-19-hi.gmi, /.css. A path with no extension gets .gmi."),
 		"content", obj("type", "string"),
 		"mime", obj("type", "string", "description", "Optional mime type; inferred from the extension when omitted")))},
 	{"upload_file", "Upload a binary file (image etc.) from base64 content.", schema([]string{"path", "content_base64"}, obj(
@@ -135,7 +135,7 @@ func (s *Server) mcpPost(w http.ResponseWriter, r *http.Request) {
 			"protocolVersion", mcpProtocolVersion,
 			"capabilities", obj("tools", obj("listChanged", false)),
 			"serverInfo", obj("name", "starpulse", "title", "starpulse smolweb CMS", "version", "1"),
-			"instructions", "Content is gemtext. Pages live at paths like /index.gmi and /posts/2026-07-19-title.gmi. Special inherited files: .header/.footer (gemtext) and .theme (CSS) per folder. Directives: {{list dir n}}, {{include p}}, {{now n}}, {{count}}, {{random p}}.",
+			"instructions", "Content is gemtext. Pages live at paths like /index.gmi and /posts/2026-07-19-title.gmi. Special inherited files: .header/.footer (gemtext), .css (CSS) and .feed (marks a folder as publishing a feed) per folder. Directives: {{list dir n}}, {{include p}}, {{now n}}, {{count}}, {{random p}}.",
 		)
 	case "ping":
 		resp.Result = obj()

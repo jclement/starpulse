@@ -270,7 +270,6 @@
 
   function pick() {
     var p = (path && path.value) || "";
-    if (/\.theme$/.test(p)) return css;
     if (/\.feed$/.test(p)) return keyvals;
     if (/\.(css)$/.test(p)) return css;
     if (/\.(gmi|gemini)$/.test(p) || p === "" || !/\.[a-z0-9]+$/i.test(p)) return gemtext;

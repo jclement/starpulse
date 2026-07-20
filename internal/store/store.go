@@ -185,13 +185,13 @@ func CleanPath(p string) (string, bool) {
 }
 
 // DefaultExt gives a path a .gmi extension when its filename has none, so
-// "/about" becomes "/about.gmi". Special files (".header", ".theme") and
+// "/about" becomes "/about.gmi". Special files (".header", ".css") and
 // paths that already carry an extension are left alone. Without this it is
 // far too easy to create a page that stores as an unviewable binary blob.
 func DefaultExt(p string) string {
 	base := path.Base(p)
 	if strings.HasPrefix(base, ".") {
-		return p // .header / .footer / .theme
+		return p // .header / .footer / .css / .feed
 	}
 	if strings.Contains(base, ".") {
 		return p // already has an extension
@@ -906,8 +906,8 @@ func boolInt(b bool) int {
 // MimeFor guesses a mime type from a path's extension.
 func MimeFor(p string) string {
 	base := path.Base(p)
-	// special files are gemtext except .theme (CSS)
-	if base == ".css" || base == ".theme" {
+	// special files are gemtext except .css
+	if base == ".css" {
 		return "text/css; charset=utf-8"
 	}
 	if strings.HasPrefix(base, ".") {
