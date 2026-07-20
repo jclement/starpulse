@@ -11,7 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
+	"github.com/charmbracelet/x/ansi"
 	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/jclement/starpulse/internal/config"
@@ -493,6 +495,45 @@ func TestAdminUserIsExact(t *testing.T) {
 	for _, u := range []string{"Admin", "ADMIN", "admin ", " admin", "admin2", "guest", "", "root"} {
 		if adminUser(u) {
 			t.Errorf("%q was treated as the admin", u)
+		}
+	}
+}
+
+// A long line must wrap inside the terminal, not run off the edge.
+//
+// This drives the model's own View() rather than a real PTY: over an ssh
+// terminal the pty itself soft-wraps whatever it is sent, so the byte stream
+// looks the same whether the editor wrapped the text or simply emitted a
+// 340-column line. Only the rendered frame can tell the difference, and it
+// is the difference that matters — a line the editor believes is one row
+// wide but the terminal draws as four breaks cursor and scroll arithmetic.
+func TestEditorWrapsLongLines(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	sy := site.New(st)
+	long := strings.Repeat("wrap-me ", 40) + "END" // ~330 columns
+	_, _ = st.SavePage("/long.gmi", []byte("# Long\n\n"+long), "", "t")
+
+	const cols = 100
+	m := newProtoModel(sy, st, "test.example", true, cols, 24, lipgloss.DefaultRenderer(), "ssh")
+	m.navigate("/long", false)
+
+	for _, stage := range []string{"browser", "editor"} {
+		if stage == "editor" {
+			m.startEdit("/long.gmi", false)
+		}
+		frame := m.View()
+		for i, line := range strings.Split(frame, "\n") {
+			if w := ansi.StringWidth(line); w > cols {
+				t.Errorf("%s: row %d is %d columns wide, terminal is %d:\n%q",
+					stage, i, w, cols, ansi.Strip(line))
+			}
+		}
+		if !strings.Contains(ansi.Strip(frame), "END") {
+			t.Errorf("%s: the end of the long line never appears — it is cut off, not wrapped", stage)
 		}
 	}
 }
