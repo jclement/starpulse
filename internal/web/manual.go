@@ -19,7 +19,7 @@ func (s *Server) adminManual(w http.ResponseWriter, r *http.Request) {
 	b.WriteString(`<p class="dim">This page describes <em>this</em> site: the doors that are switched on, and the syntax it understands.</p>`)
 
 	// ---- doors -------------------------------------------------------
-	b.WriteString("<h2>Ways in</h2>\n<table class=\"admin\">\n")
+	b.WriteString("<h2>Ways in</h2>\n<table class=\"kv\">\n")
 	row := func(what, how, note string) {
 		fmt.Fprintf(&b, "<tr><td>%s</td><td><code>%s</code></td><td class=\"dim\">%s</td></tr>\n",
 			html.EscapeString(what), html.EscapeString(how), note)
@@ -70,7 +70,7 @@ func (s *Server) adminManual(w http.ResponseWriter, r *http.Request) {
 
 	// ---- editing elsewhere -------------------------------------------
 	fmt.Fprintf(&b, `<h2>Editing from elsewhere</h2>
-<table class="admin">
+<table class="kv">
 <tr><td>REST</td><td><code>Authorization: Bearer &lt;admin password&gt;</code></td><td class="dim">%s/api/pages, /api/now, /api/search, /api/versions, /api/stats</td></tr>
 <tr><td>MCP</td><td><code>%s/mcp</code></td><td class="dim">same bearer token, or OAuth with client id <code>mcp</code> and the admin password as the secret</td></tr>
 <tr><td>SSH</td><td><code>e</code> edit · <code>c</code> new · <code>n</code> now-post · <code>x</code> delete</td><td class="dim">ctrl+s saves, ctrl+g shows syntax help</td></tr>

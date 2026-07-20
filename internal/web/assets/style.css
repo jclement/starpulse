@@ -312,6 +312,36 @@ form.admin input:focus, form.admin textarea:focus { outline: 2px solid var(--acc
   text-decoration: none;
   display: inline-block;
 }
+/* admin nav: quiet text links on one line. Eight padded buttons wrapped into
+   a ragged block the moment the window narrowed, which read as breakage. */
+nav.anav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 1.15em;
+  row-gap: 0.35em;
+  font-size: 0.9em;
+  margin: 0.2em 0 1.5em;
+  padding-bottom: 0.6em;
+  border-bottom: 1px solid var(--line);
+}
+nav.anav a, nav.anav button {
+  color: var(--dim);
+  text-decoration: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+nav.anav a:hover, nav.anav button:hover { color: var(--accent); text-decoration: underline; }
+nav.anav a.new { color: var(--accent); font-weight: 600; }
+/* everything after "view site" is site-level, not editing: push it right */
+nav.anav a.far { margin-left: auto; }
+@media (max-width: 30rem) {
+  nav.anav a.far { margin-left: 0; }
+}
+
 .btn.danger, form.inline button.danger { background: #b3402a; color: #fff; }
 .btn.quiet, form.inline button.quiet { background: var(--pre-bg); color: var(--fg); border: 1px solid var(--line); }
 form.inline { display: inline; }
@@ -523,6 +553,27 @@ a.newpost { font-weight: 400; font-size: 0.9em; margin-left: 0.6em; }
 /* row actions right-align so history/delete line up whether or not the row
    also has a view link. A folder header is a single full-width cell, so it
    must stay left or the folder name drifts to the far edge. */
+/* label/value tables (the manual). The page-list rules give column one the
+   slack, which is right there and very wrong here: paired with nowrap value
+   columns it squeezed "Gemini" down to one letter per line. */
+table.kv { display: table; width: 100%; font-size: 0.9em; }
+table.kv td { border: none; border-bottom: 1px solid var(--line); vertical-align: baseline; padding: 0.45em 1em 0.45em 0; }
+table.kv td:first-child, table.kv td:nth-child(2) { white-space: nowrap; width: 1%; }
+table.kv td:last-child { width: 100%; padding-right: 0; }
+@media (max-width: 40rem) {
+  table.kv, table.kv tbody, table.kv tr, table.kv td { display: block; width: auto; }
+  /* beat the desktop width rules: they are more specific than `table.kv td`
+     and a 1% width on a block element is 4px, not a nowrap column */
+  table.kv td:first-child, table.kv td:nth-child(2), table.kv td:last-child {
+    width: auto;
+    white-space: normal;
+    padding: 0.1em 0;
+  }
+  table.kv td { border: none; padding: 0.1em 0; overflow-wrap: anywhere; }
+  table.kv tr { border-bottom: 1px solid var(--line); padding: 0.5em 0; }
+  table.kv td:first-child { font-weight: 600; }
+}
+
 table.admin td:last-child, table.admin th:last-child { text-align: right; }
 table.admin tr.folder-row td { text-align: left; }
 

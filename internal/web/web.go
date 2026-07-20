@@ -131,7 +131,12 @@ func (s *Server) ensureStream(folder string) {
 	if s.Store.IsFeedFolder(folder) {
 		return
 	}
-	marker := store.DefaultFeedMarker("Now", s.Cfg.Feeds.Author, 30, true)
+	title := strings.Trim(folder, "/")
+	if title == "" {
+		title = "Now"
+	}
+	title = strings.ToUpper(title[:1]) + title[1:]
+	marker := store.DefaultFeedMarker(title, s.Cfg.Feeds.Author, 30, true)
 	_, _ = s.Store.SavePage(folder+store.FeedMarker, marker, "", "auto")
 }
 

@@ -47,16 +47,18 @@ func (s *Server) adminRender(w http.ResponseWriter, r *http.Request, title, body
 }
 
 func adminNav() string {
-	return `<div class="bar">
-<a class="btn quiet" href="/admin">pages</a>
-<a class="btn quiet" href="/admin/edit?path=&new=1">+ page</a>
-<a class="btn quiet" href="/admin/now">+ note</a>
-<a class="btn quiet" href="/admin/upload">upload</a>
-<a class="btn quiet" href="/admin/stats">stats</a>
-<a class="btn quiet" href="/admin/manual">manual</a>
-<a class="btn quiet" href="/">view site</a>
-<form class="inline" method="post" action="/logout"><button class="quiet" type="submit">logout</button></form>
-</div>`
+	// a row of quiet text links, not chunky buttons: eight boxes wrapped
+	// into a ragged block on anything narrower than a desktop
+	return `<nav class="anav">
+<a href="/admin">pages</a>
+<a class="new" href="/admin/edit?path=&new=1">+ page</a>
+<a class="new" href="/admin/now">+ now</a>
+<a href="/admin/upload">upload</a>
+<a href="/admin/stats">stats</a>
+<a href="/admin/manual">manual</a>
+<a class="far" href="/">view site</a>
+<form class="inline" method="post" action="/logout"><button class="linkish" type="submit">logout</button></form>
+</nav>`
 }
 
 func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
@@ -104,7 +106,8 @@ func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
 		stream := isFeed && s.Store.HidesFiles(folder)
 		actions := ""
 		if stream {
-			actions += ` <span class="dim">·</span> <a class="newpost" href="/admin/now">new note</a>`
+			actions += fmt.Sprintf(` <span class="dim">·</span> <a class="newpost" href="/admin/now?folder=%s">new note</a>`,
+				url.QueryEscape(folder))
 		} else if isFeed {
 			actions += fmt.Sprintf(` <span class="dim">·</span> <a class="newpost" href="/admin/edit?new=1&amp;path=%s">new post</a>`,
 				url.QueryEscape(folder))
@@ -481,52 +484,28 @@ func (s *Server) adminUpload(w http.ResponseWriter, r *http.Request) {
 	s.adminRender(w, r, "upload", b.String())
 }
 
+// adminNow mints the next filename in a note stream and hands it to the
+// ordinary editor. A note is just a page with a generated name, so it gets
+// preview, syntax help and history like everything else instead of a
+// second, poorer editor of its own. ?folder= picks the stream, so a site can
+// run several (a /now/, a /links/) and tell them apart.
 func (s *Server) adminNow(w http.ResponseWriter, r *http.Request) {
-	folder := s.nowFolder()
-	if r.Method == http.MethodPost {
-		body := strings.TrimSpace(strings.ReplaceAll(r.FormValue("content"), "\r\n", "\n"))
-		if body == "" {
-			http.Redirect(w, r, "/admin/now?msg="+url.QueryEscape("empty note"), http.StatusSeeOther)
-			return
-		}
-		path := s.Store.NewStreamPath(folder, time.Now().In(s.loc()))
-		if _, err := s.Store.SavePage(path, []byte(body+"\n"), "", "web note"); err != nil {
-			http.Redirect(w, r, "/admin/now?msg="+url.QueryEscape(err.Error()), http.StatusSeeOther)
-			return
-		}
-		// first note in the folder: make it a stream so the notes stay out
-		// of listings and the folder publishes a feed
-		if !s.Store.IsFeedFolder(folder) {
-			marker := store.DefaultFeedMarker("Now", s.Cfg.Feeds.Author, 30, true)
-			_, _ = s.Store.SavePage(folder+store.FeedMarker, marker, "", "web")
-		}
-		http.Redirect(w, r, "/admin/now", http.StatusSeeOther)
+	folder := strings.TrimSpace(r.URL.Query().Get("folder"))
+	if folder == "" {
+		folder = s.nowFolder()
+	}
+	if !strings.HasSuffix(folder, "/") {
+		folder += "/"
+	}
+	clean, ok := store.CleanPath(folder)
+	if !ok {
+		http.Redirect(w, r, "/admin?msg="+url.QueryEscape("bad folder"), http.StatusSeeOther)
 		return
 	}
-	posts := s.Store.StreamPages(folder, 0)
-	var b strings.Builder
-	fmt.Fprintf(&b, "<h1>Notes</h1>\n%s", adminNav())
-	fmt.Fprintf(&b, `<p class="dim">Short entries, stored as pages in <code>%s</code>. They stay out of listings and feed <code>{{now}}</code>.</p>`,
-		html.EscapeString(folder))
-	if msg := r.URL.Query().Get("msg"); msg != "" {
-		fmt.Fprintf(&b, `<p class="flash err">%s</p>`+"\n", html.EscapeString(msg))
-	}
-	b.WriteString(`<form class="admin" method="post" action="/admin/now">
-<label for="content">what&#39;s happening? (gemtext)</label>
-<textarea id="content" name="content" style="min-height:6em" autofocus></textarea>
-<div class="bar"><button type="submit">post note</button></div>
-</form>`)
-	for _, p := range posts {
-		when := p.Date
-		if when == "" {
-			when = p.Created.In(s.loc()).Format("2006-01-02 15:04")
-		}
-		fmt.Fprintf(&b, `<div class="hit"><p class="dim">%s · <a href="/admin/edit?path=%s">edit</a> · <form class="inline del" method="post" action="/admin/delete"><input type="hidden" name="path" value="%s"><button class="linkish" type="submit" data-path="%s">delete</button></form></p><pre>%s</pre></div>`+"\n",
-			html.EscapeString(when), url.QueryEscape(p.Path), html.EscapeString(p.Path),
-			html.EscapeString(p.Path), html.EscapeString(string(p.Content)))
-	}
-	b.WriteString(`<p class="dim">Embed them with <code>{{now 3}}</code>, or <code>{{stream /folder 5}}</code> for any other stream. <code>{{latest /folder body|title|date|link}}</code> pulls out just the newest one.</p>`)
-	s.adminRender(w, r, "notes", b.String())
+	folder = strings.TrimSuffix(clean, "/") + "/"
+	s.ensureStream(folder)
+	path := s.Store.NewStreamPath(folder, time.Now().In(s.loc()))
+	http.Redirect(w, r, "/admin/edit?new=1&path="+url.QueryEscape(path), http.StatusSeeOther)
 }
 
 // adminFeedToggle turns a folder's Atom feed on or off by creating or
