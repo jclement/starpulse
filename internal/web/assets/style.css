@@ -412,3 +412,16 @@ table.admin td:nth-child(4),
 table.admin th:nth-child(2),
 table.admin th:nth-child(3) { white-space: nowrap; }
 table.admin td:first-child { word-break: break-word; }
+
+/* a button that reads as a link (inline row actions).
+   needs to out-specify `form.inline button`, which paints solid. */
+form.del button.linkish, button.linkish {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: none;
+}
+form.del button.linkish:hover, button.linkish:hover { text-decoration: underline; text-underline-offset: 3px; color: #b3402a; }

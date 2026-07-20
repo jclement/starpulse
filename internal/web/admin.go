@@ -108,10 +108,11 @@ func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
 			}
 			// show just the file name in the folder view; full path on hover
 			name := m.Path[len(folder):]
-			fmt.Fprintf(&b, `<tr class="page-row" data-key="%s"><td><a href="/admin/edit?path=%s" title="%s">%s</a></td><td class="right dim">%s</td><td class="dim">%s</td><td class="dim">%s<a href="/admin/versions?path=%s">history</a></td></tr>`+"\n",
+			fmt.Fprintf(&b, `<tr class="page-row" data-key="%s"><td><a href="/admin/edit?path=%s" title="%s">%s</a></td><td class="right dim">%s</td><td class="dim">%s</td><td class="dim">%s<a href="/admin/versions?path=%s">history</a> · <form class="inline del" method="post" action="/admin/delete"><input type="hidden" name="path" value="%s"><button class="linkish" type="submit" data-path="%s">delete</button></form></td></tr>`+"\n",
 				html.EscapeString(strings.ToLower(m.Path+" "+title)),
 				url.QueryEscape(m.Path), html.EscapeString(titleHint(m.Path, title)), html.EscapeString(name),
-				sizeStr(m.Size), m.Updated.In(s.loc()).Format("2006-01-02 15:04"), view, url.QueryEscape(m.Path))
+				sizeStr(m.Size), m.Updated.In(s.loc()).Format("2006-01-02 15:04"), view, url.QueryEscape(m.Path),
+				html.EscapeString(m.Path), html.EscapeString(m.Path))
 		}
 		b.WriteString("</tbody>\n")
 	}
@@ -312,7 +313,7 @@ func (s *Server) adminDelete(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin?msg="+url.QueryEscape("delete failed: "+err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/admin?msg="+url.QueryEscape("deleted "+p+" (recoverable from history)"), http.StatusSeeOther)
+	http.Redirect(w, r, "/admin?msg="+url.QueryEscape("deleted "+p+" — recoverable from its history"), http.StatusSeeOther)
 }
 
 func (s *Server) adminVersions(w http.ResponseWriter, r *http.Request) {

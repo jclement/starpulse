@@ -171,6 +171,14 @@ func TestAdminFolderGroupingAndFilter(t *testing.T) {
 			t.Errorf("admin list missing %q", want)
 		}
 	}
+	// every row offers a delete action
+	if n := strings.Count(body, `action="/admin/delete"`); n < 5 {
+		t.Errorf("delete action on only %d rows, want one per page", n)
+	}
+	if !strings.Contains(body, `<input type="hidden" name="path" value="/posts/a.gmi">`) {
+		t.Error("row delete form missing its path")
+	}
+
 	// each folder must appear EXACTLY once, even though a flat path sort
 	// interleaves /posts/* between /now.gmi and /projects.gmi
 	if n := strings.Count(body, `data-folder="/"`); n != 1 {
@@ -191,6 +199,28 @@ func TestAdminFolderGroupingAndFilter(t *testing.T) {
 		if !strings.Contains(rootSection, want) {
 			t.Errorf("root group missing %s — folder bucketing is split", want)
 		}
+	}
+}
+
+func TestDeleteFromList(t *testing.T) {
+	_, st, ts := testServer(t)
+	_, _ = st.SavePage("/index.gmi", []byte("# Home"), "", "t")
+	_, _ = st.SavePage("/media/pic.png", []byte("\x89PNG"), "image/png", "t")
+	client := login(t, ts, testPassword)
+
+	// a binary/uploaded file can be deleted straight from the list
+	resp, err := client.PostForm(ts.URL+"/admin/delete", url.Values{"path": {"/media/pic.png"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if _, err := st.GetPage("/media/pic.png"); err == nil {
+		t.Error("uploaded file survived delete")
+	}
+	// ...and is still recoverable
+	vs, _ := st.ListVersions("/media/pic.png")
+	if len(vs) == 0 {
+		t.Error("deleted file left no restorable version")
 	}
 }
 

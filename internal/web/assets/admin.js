@@ -182,3 +182,15 @@
     }
   });
 })();
+
+// confirm row deletes (deletes are recoverable from history, but still)
+(function () {
+  document.querySelectorAll("form.del").forEach(function (f) {
+    f.addEventListener("submit", function (e) {
+      var p = f.querySelector("button").getAttribute("data-path") || "this page";
+      if (!confirm("Delete " + p + "?\n\nIt stays recoverable from its history.")) {
+        e.preventDefault();
+      }
+    });
+  });
+})();
