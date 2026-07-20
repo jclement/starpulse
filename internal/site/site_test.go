@@ -202,7 +202,7 @@ func TestCountDirectiveAndStats(t *testing.T) {
 	}
 }
 
-func TestNowDirectiveAndBuiltinPage(t *testing.T) {
+func TestNowDirectiveAndAuthoredPage(t *testing.T) {
 	sy, st := testSite(t)
 	_, _ = st.AddNow("hello from now")
 	_, _ = st.AddNow("second update")
@@ -213,19 +213,17 @@ func TestNowDirectiveAndBuiltinPage(t *testing.T) {
 		t.Errorf("now limit wrong:\n%s", g)
 	}
 
-	// built-in /now page lists everything
+	// no built-in /now — it 404s until the author makes one
+	if r := sy.Resolve("/now", ""); r.Type != NotFound {
+		t.Fatalf("/now without a page: %+v", r)
+	}
+	save(t, st, "/now.gmi", "# My Now\n\n{{now 0}}")
 	r := sy.Resolve("/now", "")
-	if r.Type != PageResult || r.Page.Title != "Now" {
-		t.Fatalf("/now: %+v", r)
+	if r.Type != PageResult || r.Page.Title != "My Now" {
+		t.Fatalf("authored /now: %+v", r)
 	}
-	if !strings.Contains(r.Page.Gemtext, "hello from now") {
-		t.Errorf("/now missing posts:\n%s", r.Page.Gemtext)
-	}
-
-	// an authored now.gmi wins over the builtin
-	save(t, st, "/now.gmi", "# My custom now")
-	if r := sy.Resolve("/now", ""); r.Page.Title != "My custom now" {
-		t.Errorf("custom /now shadowed: %+v", r.Page)
+	if !strings.Contains(r.Page.Gemtext, "hello from now") || !strings.Contains(r.Page.Gemtext, "second update") {
+		t.Errorf("authored /now missing posts:\n%s", r.Page.Gemtext)
 	}
 }
 
@@ -246,8 +244,9 @@ func TestRevAndUpdatedDirectives(t *testing.T) {
 	if !strings.Contains(g, "· r3") {
 		t.Errorf("rev after edits wrong:\n%s", g)
 	}
-	// synthetic pages don't explode
-	g = sy.Resolve("/now", "").Page.Gemtext
+	// synthetic pages (directory listings) don't explode
+	save(t, st, "/dir/leaf.gmi", "# Leaf")
+	g = sy.Resolve("/dir/", "").Page.Gemtext
 	if !strings.Contains(g, "· r1") || !strings.Contains(g, "recently") {
 		t.Errorf("synthetic rev/updated wrong:\n%s", g)
 	}

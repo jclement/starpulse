@@ -104,7 +104,6 @@ func (s *Site) Resolve(urlPath, proto string) *Result {
 			return s.pageResult(dir, pg, proto)
 		}
 		if dir != "/" && !s.dirExists(dir) {
-			// built-in /now/ falls through to NotFound; only real dirs list
 			return &Result{Type: NotFound}
 		}
 		return s.syntheticListing(dir, proto)
@@ -124,11 +123,6 @@ func (s *Site) Resolve(urlPath, proto string) *Result {
 	// extensionless page: /about -> /about.gmi
 	if pg, err := s.Store.GetPage(cleaned + ".gmi"); err == nil {
 		return s.pageResult(cleaned, pg, proto)
-	}
-
-	// built-in now page (unless the author made their own)
-	if cleaned == "/now" {
-		return s.nowPage(proto)
 	}
 
 	// directory without trailing slash
@@ -299,29 +293,6 @@ func (s *Site) syntheticListing(dir, proto string) *Result {
 	}}
 }
 
-// nowPage renders the built-in /now page listing every micro-post.
-func (s *Site) nowPage(proto string) *Result {
-	if proto != "" {
-		s.Store.Bump("/now", proto)
-	}
-	src := "# Now\n\nSmall updates, newest first.\n\n{{now 0}}\n"
-	anchor := "/now.gmi"
-	ctx := expandCtx{urlPath: "/now"}
-	var parts []string
-	if h := s.nearestSpecial(anchor, ".header"); h != "" {
-		parts = append(parts, s.expand(h, "/", ctx, 0))
-	}
-	parts = append(parts, s.expand(src, "/", ctx, 0))
-	if f := s.nearestSpecial(anchor, ".footer"); f != "" {
-		parts = append(parts, s.expand(f, "/", ctx, 0))
-	}
-	return &Result{Type: PageResult, Page: &Page{
-		URLPath: "/now",
-		Title:   "Now",
-		Gemtext: joinChunks(parts),
-		Theme:   s.nearestSpecial(anchor, ".theme"),
-	}}
-}
 
 // ---- directives ---------------------------------------------------------
 

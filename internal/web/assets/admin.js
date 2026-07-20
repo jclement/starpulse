@@ -128,3 +128,15 @@
     }
   });
 })();
+
+// syntax help popover: close on Escape or outside click (CSS-only otherwise)
+(function () {
+  var help = document.getElementById("syntax-help");
+  if (!help) return;
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && help.open) help.open = false;
+  });
+  document.addEventListener("click", function (e) {
+    if (help.open && !help.contains(e.target)) help.open = false;
+  });
+})();

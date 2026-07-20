@@ -266,6 +266,47 @@ func TestAdminEditAndNow(t *testing.T) {
 	ts.send("q")
 }
 
+func TestHelp(t *testing.T) {
+	_, st, addr := startServer(t)
+	c, err := dial(t, addr, "admin", adminPW)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	ts := openTUI(t, c)
+	ts.expect("SSH Home")
+
+	// browse help via ?
+	ts.send("?")
+	ts.expect("Browser keys")
+	ts.expect("Admin keys")
+	ts.send(" ") // page down to the syntax sections
+	ts.send(" ")
+	ts.expect("{{version}}")
+	ts.send("b") // back to home
+	ts.expect("SSH Home")
+
+	// editor help via ctrl+g preserves editor state
+	ts.send("e")
+	ts.expect("editing /index.gmi")
+	ts.send("KEEP-ME")
+	ts.send("\x07") // ctrl+g
+	ts.expect("syntax help")
+	ts.send(" ") // scroll down to the directives
+	ts.send(" ")
+	ts.expect("{{version}}")
+	ts.send("\x1b") // any key returns to editor
+	ts.expect("editing /index.gmi")
+	ts.send("\x13") // ctrl+s
+	ts.expect("saved /index.gmi")
+	pg, _ := st.GetPage("/index.gmi")
+	if pg == nil || !strings.Contains(string(pg.Content), "KEEP-ME") {
+		t.Error("editor content lost across help overlay")
+	}
+	ts.send("\x11")
+	ts.send("q")
+}
+
 func TestGuestCannotEdit(t *testing.T) {
 	_, st, addr := startServer(t)
 	c, err := dial(t, addr, "guest", "x")

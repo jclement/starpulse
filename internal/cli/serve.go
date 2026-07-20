@@ -168,6 +168,12 @@ Log in at /login with your admin password to edit any page (look for the ✎ lin
 
 {{list / 10}}
 `,
+		"/now.gmi": `# Now
+
+Small updates, newest first.
+
+{{now 0}}
+`,
 		"/.footer": `
 ──────────────────────────
 

@@ -116,8 +116,9 @@ Dated filenames get listed newest-first and feed `/feed.xml`.
 | `{{updated}}` | the page's last-edit date |
 | `{{version}}` | server build version |
 
-**Now posts** are lightweight timestamped updates — post from the admin, API,
-or MCP; they show up at `/now` and anywhere you put `{{now}}`.
+**Now posts** are lightweight timestamped updates — post from the admin, SSH,
+API, or MCP; they render anywhere you put `{{now}}` (the starter site seeds a
+`/now.gmi` doing exactly that).
 
 Every save keeps the previous content as a **version** (deletes too), so
 undo is always one click away. Per-page **stats** are broken down by door:

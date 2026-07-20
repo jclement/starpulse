@@ -95,6 +95,49 @@ func sizeStr(n int64) string {
 	}
 }
 
+
+// editorHelpHTML is the syntax cheat-sheet shown by the editor's "syntax"
+// popover. Kept out of the template so directive braces stay literal.
+const editorHelpHTML = `<details class="help" id="syntax-help">
+<summary class="btn quiet">syntax</summary>
+<div class="help-panel">
+<h3>Gemtext</h3>
+<pre># Heading 1        ## Heading 2       ### Heading 3
+=&gt; /path Link label
+=&gt; https://ex.example External link
+=&gt; /media/cat.jpg Images render inline on the web
+* list item
+&gt; quoted text
+` + "```" + `
+preformatted block (alt text after the first fence)
+` + "```" + `</pre>
+<h3>Directives</h3>
+<table>
+<tr><td><code>{{list [folder] [limit]}}</code></td><td>link list of a folder&#39;s pages, dated first, newest first</td></tr>
+<tr><td><code>{{include /path}}</code></td><td>another page&#39;s content, inline</td></tr>
+<tr><td><code>{{now [limit]}}</code></td><td>latest now-posts (0 = all)</td></tr>
+<tr><td><code>{{random /path}}</code></td><td>one random non-empty line from a file</td></tr>
+<tr><td><code>{{count}}</code></td><td>this page&#39;s view counter</td></tr>
+<tr><td><code>{{rev}}</code></td><td>this page&#39;s revision number</td></tr>
+<tr><td><code>{{updated}}</code></td><td>this page&#39;s last-edit date</td></tr>
+<tr><td><code>{{version}}</code></td><td>server build version</td></tr>
+</table>
+<h3>Special files (inherited down folders)</h3>
+<table>
+<tr><td><code>.header</code> / <code>.footer</code></td><td>gemtext above/below every page in the folder &amp; below</td></tr>
+<tr><td><code>.theme</code></td><td>CSS applied to the web rendering of the folder &amp; below</td></tr>
+</table>
+<h3>Front matter (optional, top of page)</h3>
+<pre>---
+title: Custom title
+date: 2026-07-20
+header: none
+footer: none
+---</pre>
+<p class="dim">Dated filenames (<code>/posts/2026-07-20-hi.gmi</code>) sort newest-first in {{list}} and feed /feed.xml.</p>
+</div>
+</details>`
+
 var editorTpl = template.Must(template.New("editor").Parse(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -113,6 +156,7 @@ var editorTpl = template.Must(template.New("editor").Parse(`<!DOCTYPE html>
 <span class="ed-spacer"></span>
 <button type="submit">save</button>
 <button type="button" id="pv-toggle" hidden>preview</button>
+{{.Help}}
 {{if .OldPath}}<a class="btn quiet" href="/admin/versions?path={{.OldPath}}">history</a><a class="btn quiet" href="{{.ViewURL}}">view</a>{{end}}
 <a class="btn quiet" href="/admin">close</a>
 </div>
@@ -138,6 +182,7 @@ type editorData struct {
 	ViewURL string
 	Content string
 	AssetV  string
+	Help    template.HTML
 }
 
 func (s *Server) adminEdit(w http.ResponseWriter, r *http.Request) {
@@ -173,6 +218,7 @@ func (s *Server) adminEdit(w http.ResponseWriter, r *http.Request) {
 		ViewURL: pageURL(p),
 		Content: content,
 		AssetV:  site.BuildVersion,
+		Help:    template.HTML(editorHelpHTML),
 	})
 }
 
@@ -340,13 +386,13 @@ func (s *Server) adminNow(w http.ResponseWriter, r *http.Request) {
 	b.WriteString(`<form class="admin" method="post" action="/admin/now">
 <label for="content">what's happening? (gemtext)</label>
 <textarea id="content" name="content" style="min-height:6em" autofocus></textarea>
-<div class="bar"><button type="submit">post</button><a class="btn quiet" href="/now">view /now</a></div>
+<div class="bar"><button type="submit">post</button></div>
 </form>`)
 	for _, p := range posts {
 		fmt.Fprintf(&b, `<div class="hit"><p class="dim">%s · <form class="inline" method="post" action="/admin/now/delete"><input type="hidden" name="id" value="%d"><button class="quiet" type="submit">delete</button></form></p><pre>%s</pre></div>`+"\n",
 			p.Created.Format("2006-01-02 15:04"), p.ID, html.EscapeString(p.Content))
 	}
-	b.WriteString(`<p class="dim">Embed the latest posts in any page with <code>{{now 3}}</code>. The built-in <a href="/now">/now</a> page lists them all.</p>`)
+	b.WriteString(`<p class="dim">Embed the latest posts in any page with <code>{{now 3}}</code> — or make a page like <code>/now.gmi</code> containing <code>{{now 0}}</code> to list them all.</p>`)
 	s.adminRender(w, r, "now", b.String())
 }
 

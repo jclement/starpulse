@@ -413,6 +413,31 @@ func TestMCP(t *testing.T) {
 	}
 }
 
+func TestEditorSyntaxHelp(t *testing.T) {
+	_, st, ts := testServer(t)
+	_, _ = st.SavePage("/index.gmi", []byte("# Home"), "", "t")
+	client := login(t, ts, testPassword)
+	resp, err := client.Get(ts.URL + "/admin/edit?path=/index.gmi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	body := string(b)
+	for _, want := range []string{
+		"syntax-help",
+		"{{list [folder] [limit]}}",
+		"{{include /path}}",
+		"{{rev}}",
+		".theme",
+		"header: none",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("editor help missing %q", want)
+		}
+	}
+}
+
 func TestPreviewEndpoint(t *testing.T) {
 	_, _, ts := testServer(t)
 	req, _ := http.NewRequest("POST", ts.URL+"/api/preview", strings.NewReader("# Preview me"))

@@ -73,7 +73,7 @@ var mcpTools = []mcpTool{
 	{"search", "Full-text search across the site.", schema([]string{"query"}, obj(
 		"query", obj("type", "string")))},
 	{"get_stats", "Per-page view counts broken down by protocol (http, gemini, +tor variants).", schema(nil, obj())},
-	{"post_now", "Publish a short 'now' micro-post (shown on /now and via {{now}} in pages).", schema([]string{"content"}, obj(
+	{"post_now", "Publish a short 'now' micro-post (rendered by any page containing a {{now}} directive).", schema([]string{"content"}, obj(
 		"content", obj("type", "string")))},
 	{"list_now", "List now micro-posts, newest first.", schema(nil, obj(
 		"limit", obj("type", "integer", "description", "0 or omitted = all")))},

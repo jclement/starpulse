@@ -22,6 +22,7 @@ const (
 	modeEdit
 	modeInput // goto / search / new-page path prompt
 	modeConfirm
+	modeEditHelp // help overlay while editing (editor state preserved)
 )
 
 type inputKind int
@@ -61,6 +62,9 @@ type model struct {
 	input      textinput.Model
 	inputKind  inputKind
 	inputLabel string
+
+	// help overlay (edit mode)
+	helpVp viewport.Model
 
 	// editor
 	ed      textarea.Model
@@ -221,6 +225,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateInput(msg)
 		case modeConfirm:
 			return m.updateConfirm(msg)
+		case modeEditHelp:
+			return m.updateEditHelp(msg)
 		default:
 			return m.updateBrowse(msg)
 		}
@@ -277,6 +283,8 @@ func (m *model) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.navigate(m.url, false)
 		m.setStatus("reloaded", false)
+	case "?":
+		m.showDoc("/help", "help", helpDoc(m.admin))
 	case "g":
 		m.prompt(inputGoto, "go to path", "/")
 	case "/":
@@ -465,6 +473,12 @@ func (m *model) sizeEditor() {
 
 func (m *model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "ctrl+g":
+		lines, _ := renderDoc(m.st, helpDoc(m.admin), min(m.width-2, 100), -1)
+		m.helpVp = viewport.New(m.width, max(1, m.height-3))
+		m.helpVp.SetContent(strings.Join(lines, "\n"))
+		m.mode = modeEditHelp
+		return m, nil
 	case "ctrl+s":
 		return m.saveEdit()
 	case "ctrl+q", "esc":
@@ -487,6 +501,22 @@ func (m *model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m *model) updateEditHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		m.helpVp.ScrollUp(1)
+	case "down", "j":
+		m.helpVp.ScrollDown(1)
+	case "pgup":
+		m.helpVp.PageUp()
+	case "pgdown", " ":
+		m.helpVp.PageDown()
+	default: // any other key returns to the editor
+		m.mode = modeEdit
+	}
+	return m, nil
+}
+
 func (m *model) saveEdit() (tea.Model, tea.Cmd) {
 	content := m.ed.Value()
 	if m.edNow {
@@ -499,8 +529,8 @@ func (m *model) saveEdit() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.mode = modeBrowse
-		m.navigate("/now", true)
-		m.setStatus("now post published ✓", false)
+		m.navigate(m.url, false)
+		m.setStatus("now post published ✓ (shown wherever a page uses {{now}})", false)
 		return m, nil
 	}
 	pg, err := m.store.SavePage(m.edPath, []byte(content), "", "ssh")
@@ -519,6 +549,9 @@ func (m *model) View() string {
 	switch m.mode {
 	case modeEdit:
 		return m.viewEdit()
+	case modeEditHelp:
+		return m.header("syntax help") + "\n" + m.helpVp.View() + "\n" +
+			m.bbsHelp("\u2191\u2193", "scroll", "any key", "back to editor")
 	default:
 		return m.viewBrowse()
 	}
@@ -600,7 +633,7 @@ func (m *model) viewEdit() string {
 	}
 	foot := m.statusLine()
 	if foot == "" {
-		foot = m.bbsHelp("^S", "save", "esc", "back")
+		foot = m.bbsHelp("^S", "save", "^G", "help", "esc", "back")
 	}
 	return m.header(label) + "\n" + m.ed.View() + "\n" + foot
 }
