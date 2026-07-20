@@ -364,7 +364,15 @@ func (m *model) allURLs() []string {
 	}
 	var out []string
 	for _, mm := range metas {
-		if mm.Binary || strings.HasPrefix(pathBase(mm.Path), ".") {
+		if mm.Binary {
+			continue // can't be displayed in a text browser
+		}
+		if strings.HasPrefix(pathBase(mm.Path), ".") {
+			// .header/.footer/.theme aren't browsable, but an admin should
+			// still be able to jump straight to editing one
+			if m.admin {
+				out = append(out, mm.Path)
+			}
 			continue
 		}
 		if !strings.HasSuffix(mm.Path, ".gmi") {
@@ -387,8 +395,16 @@ func pathBase(p string) string {
 	return p
 }
 
+func (m *model) pickLimit() int {
+	// fill the viewport rather than an arbitrary handful
+	if n := m.vp.Height - 2; n > 4 {
+		return min(n, 20)
+	}
+	return 5
+}
+
 func (m *model) updatePicks() {
-	m.pickHits = fuzzyRank(strings.TrimSpace(m.input.Value()), m.pickAll, 8)
+	m.pickHits = fuzzyRank(strings.TrimSpace(m.input.Value()), m.pickAll, m.pickLimit())
 	if m.pickSel >= len(m.pickHits) {
 		m.pickSel = 0
 	}
@@ -415,8 +431,14 @@ func (m *model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		// goto: prefer the highlighted fuzzy match over the raw text
 		if m.inputKind == inputGoto && len(m.pickHits) > 0 {
+			pick := m.pickHits[m.pickSel]
 			m.mode = modeBrowse
-			m.navigate(m.pickHits[m.pickSel], true)
+			if store.Hidden(pick) {
+				// special files can't be browsed — edit them directly
+				m.startEdit(pick, false)
+				return m, nil
+			}
+			m.navigate(pick, true)
 			return m, nil
 		}
 		val := strings.TrimSpace(m.input.Value())
@@ -707,7 +729,11 @@ func (m *model) viewBrowse() string {
 func (m *model) pickerView() string {
 	rows := m.vp.Height
 	lines := make([]string, 0, rows)
-	lines = append(lines, m.st.dim.Render("  ↑↓ select · ↵ open · esc cancel"))
+	hint := fmt.Sprintf("  %d shown · ↑↓ select · ↵ open · esc cancel", len(m.pickHits))
+	if len(m.pickHits) >= m.pickLimit() {
+		hint = fmt.Sprintf("  %d+ matches — keep typing · ↑↓ select · ↵ open · esc cancel", len(m.pickHits))
+	}
+	lines = append(lines, m.st.dim.Render(hint))
 	for i, h := range m.pickHits {
 		if len(lines) >= rows {
 			break
