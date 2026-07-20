@@ -500,7 +500,7 @@ func TestAdminManual(t *testing.T) {
 	// it documents the doors that are actually switched on, with this host
 	for _, want := range []string{
 		"ssh guest@test.example", "telnet test.example", "gemini://test.example/",
-		"{{list [folder] [limit]}}", ".feed", "enable feed",
+		"{{list [folder] [limit]}}", ".feed", "feed on", "datetime",
 		"YYYY-MM-DD-", "/mcp",
 	} {
 		if !strings.Contains(body, want) {
