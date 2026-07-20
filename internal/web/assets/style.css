@@ -491,7 +491,10 @@ a.newpost:hover { text-decoration: underline; }
 /* ---- editor highlighting overlay ----
    the textarea keeps the caret and selection but paints no glyphs; the
    <pre> underneath shows the coloured copy in exactly the same metrics. */
-.ed-main.ed-highlighted { position: relative; }
+/* the editor column: the overlay's positioning context, sized to the
+   textarea alone so it can never reach across into the preview */
+.ed-src { position: relative; flex: 1; min-width: 0; display: flex; }
+.ed-src textarea { flex: 1; min-width: 0; }
 .ed-main.ed-highlighted textarea,
 .ed-main .ed-hl {
   font: inherit;

@@ -256,10 +256,10 @@ func timeNowDate() string {
 // {{latest}} generalises to any folder, and picks out one part of the entry.
 func TestLatestDirective(t *testing.T) {
 	sy, st := testSite(t)
-	save(t, st, "/a.gmi", "# A\n\nlatest: {{latest}} on {{latest date}}!")
+	save(t, st, "/a.gmi", "# A\n\nlatest: {{latest /now/}} on {{latest /now/ date}}!")
 	g := sy.Resolve("/a", "").Page.Gemtext
 	if !strings.Contains(g, "latest:  on !") {
-		t.Errorf("empty stream should render empty, not error:\n%s", g)
+		t.Errorf("empty folder should render empty, not error:\n%s", g)
 	}
 
 	save(t, st, "/now/"+store.FeedMarker, string(store.DefaultFeedMarker("Now", "", 30)))
@@ -268,7 +268,21 @@ func TestLatestDirective(t *testing.T) {
 
 	g = sy.Resolve("/a", "").Page.Gemtext
 	if !strings.Contains(g, "latest: the newest note on 2026-07-20!") {
-		t.Errorf("bare {{latest}} wrong:\n%s", g)
+		t.Errorf("{{latest /now/}} wrong:\n%s", g)
+	}
+
+	// the folder is required, and the old shorthands say so rather than
+	// silently rendering nothing
+	save(t, st, "/c.gmi", "x {{latest}} y {{latest date}} z")
+	if g := sy.Resolve("/c", "").Page.Gemtext; strings.Count(g, "name a folder") != 2 {
+		t.Errorf("a folderless {{latest}} should say so:\n%s", g)
+	}
+
+	// "." is the page's own folder, so a folder's index.gmi can show its
+	// own newest entry without naming itself
+	save(t, st, "/now/index.gmi", "# Now\n\n{{latest . body}} ({{latest . date}})")
+	if g := sy.Resolve("/now/", "").Page.Gemtext; !strings.Contains(g, "the newest note (2026-07-20)") {
+		t.Errorf("{{latest . }} did not resolve to the containing folder:\n%s", g)
 	}
 	if strings.Contains(g, "older note") {
 		t.Errorf("latest leaked an older entry:\n%s", g)

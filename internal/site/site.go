@@ -55,7 +55,8 @@ type Site struct {
 	Store *store.Store
 	// Loc is the timezone for displayed timestamps (nil = server local).
 	Loc *time.Location
-	// NowFolder is the folder {{now}} and a bare {{latest}} read from.
+	// NowFolder is the folder {{now}} reads from, and where the note-posting
+	// doors write.
 	NowFolder string
 }
 
@@ -386,17 +387,17 @@ func (s *Site) expand(body, baseDir string, ctx expandCtx, depth int) string {
 		body = latestRe.ReplaceAllStringFunc(body, func(m string) string {
 			g := latestRe.FindStringSubmatch(m)
 			folder, part := g[1], g[2]
-			// one bare word that names a part is a part, not a folder:
-			// {{latest date}} means the default folder's newest date. The
-			// four part names are reserved; a folder is a path.
-			if part == "" && isLatestPart(folder) {
-				folder, part = "", folder
+			// the folder is required: which entry {{latest}} means is the
+			// whole question, and inheriting it from config made the same
+			// directive mean different things on different sites. "." is
+			// this page's own folder.
+			if folder == "" || isLatestPart(folder) {
+				return "(latest: name a folder, e.g. {{latest /now/ date}})"
 			}
-			if folder == "" {
-				folder = s.nowFolder()
-			} else if !strings.HasPrefix(folder, "/") {
-				folder = resolveRef(baseDir, folder) + "/"
+			if !strings.HasPrefix(folder, "/") {
+				folder = resolveRef(baseDir, folder)
 			}
+			folder = strings.TrimSuffix(folder, "/") + "/"
 			if part == "" {
 				part = "body"
 			}
@@ -487,7 +488,8 @@ func (s *Site) updatedString(ctx expandCtx) string {
 	return "recently"
 }
 
-// isLatestPart reports whether a bare {{latest X}} argument names a part.
+// isLatestPart catches {{latest date}} — the old shorthand, which reads as a
+// folder called "date" and would silently render nothing.
 func isLatestPart(s string) bool {
 	switch s {
 	case "body", "link", "title", "date":

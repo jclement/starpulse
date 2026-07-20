@@ -227,13 +227,22 @@
   var path = document.getElementById("path");
   if (!ta || !window.getComputedStyle) return;
 
+  // The layer is absolutely positioned over the textarea, so it needs a
+  // wrapper of exactly the textarea's size. Positioning it against .ed-main
+  // made it span the preview column too and paint its background over the
+  // rendered page — the preview looked empty apart from the emoji, which
+  // have a filter and so paint in a layer of their own.
   var main = ta.parentNode;
+  var src = document.createElement("div");
+  src.className = "ed-src";
+  main.insertBefore(src, ta);
+  src.appendChild(ta);
   var layer = document.createElement("pre");
   layer.className = "ed-hl";
   layer.setAttribute("aria-hidden", "true");
   var code = document.createElement("code");
   layer.appendChild(code);
-  main.insertBefore(layer, ta);
+  src.insertBefore(layer, ta);
   main.classList.add("ed-highlighted");
 
   function esc(s) {

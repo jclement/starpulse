@@ -48,8 +48,8 @@ Lines are the unit — no inline markup.
 * {{include /path}} — another page's content, inline
 * {{stream [folder] [limit]}} — a folder's entries in full, newest first (0 = all)
 * {{now [limit]}} — the same, for the notes folder (default 5)
-* {{latest [folder] [part]}} — one piece of a folder's newest entry, inline;
-  part is body (default), title, date or link
+* {{latest /folder [part]}} — one piece of that folder's newest entry, inline;
+  part is body (default), title, date or link. "." is this page's own folder
 * {{random /path}} — one random non-empty line from a file
 * {{count}} — the page's view counter
 * {{rev}} — the page's revision number

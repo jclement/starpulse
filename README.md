@@ -177,7 +177,7 @@ automatically, so you cannot accidentally create an unviewable file.
 | `{{list [folder] [limit]}}` | link list of a folder's pages |
 | `{{include /path}}` | another page's content, inline |
 | `{{stream [folder] [limit]}}` | a folder's entries in full, newest first |
-| `{{latest [folder] [body\|link\|title\|date]}}` | one part of a folder's newest entry, inline; folder defaults to `now_folder`, part to `body` |
+| `{{latest /folder [body\|link\|title\|date]}}` | one part of that folder's newest entry, inline. The folder is required; `.` means the page's own folder. Part defaults to `body` |
 | `{{now [limit]}}` | `{{stream}}` over the folder named by `now_folder` |
 | `{{random /path}}` | one random line from a file |
 | `{{count}}` | this page's view counter |

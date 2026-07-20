@@ -116,7 +116,7 @@ preformatted block (alt text after the first fence)
 <tr><td><code>{{include /path}}</code></td><td>another page&#39;s content, inline</td></tr>
 <tr><td><code>{{stream [folder] [limit]}}</code></td><td>a folder&#39;s entries in full, newest first (0 = all)</td></tr>
 <tr><td><code>{{now [limit]}}</code></td><td>the same, for the notes folder (default 5)</td></tr>
-<tr><td><code>{{latest [folder] [part]}}</code></td><td>one piece of a folder&#39;s newest entry, inline: <code>body</code> (default), <code>title</code>, <code>date</code> or <code>link</code></td></tr>
+<tr><td><code>{{latest /folder [part]}}</code></td><td>one piece of that folder&#39;s newest entry, inline: <code>body</code> (default), <code>title</code>, <code>date</code> or <code>link</code>. <code>.</code> means this page&#39;s own folder</td></tr>
 <tr><td><code>{{random /path}}</code></td><td>one random non-empty line from a file</td></tr>
 <tr><td><code>{{count}}</code></td><td>this page&#39;s view counter</td></tr>
 <tr><td><code>{{rev}}</code></td><td>this page&#39;s revision number</td></tr>
