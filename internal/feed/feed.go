@@ -271,3 +271,87 @@ func PageURL(p string) string {
 	}
 	return u
 }
+
+// ---- log folders --------------------------------------------------------
+//
+// A "log folder" is any folder holding date-stamped pages — /posts/,
+// /projects/, whatever you like. They are discovered from the content
+// itself rather than configured, and each one publishes its own Atom feed
+// at <folder>feed.xml.
+
+// LogFolders returns the folders containing at least one dated page,
+// mapped to how many dated pages each holds.
+func LogFolders(st *store.Store) map[string]int {
+	out := map[string]int{}
+	metas, err := st.ListAll()
+	if err != nil {
+		return out
+	}
+	for _, m := range metas {
+		if m.Binary || store.Hidden(m.Path) || !strings.HasSuffix(m.Path, ".gmi") {
+			continue
+		}
+		if DatedName(m.Path) == "" {
+			continue
+		}
+		out[folderOf(m.Path)]++
+	}
+	return out
+}
+
+// IsLogFolder reports whether a folder holds dated pages.
+func IsLogFolder(st *store.Store, folder string) bool {
+	if !strings.HasSuffix(folder, "/") {
+		folder += "/"
+	}
+	return LogFolders(st)[folder] > 0
+}
+
+func folderOf(p string) string {
+	if i := strings.LastIndexByte(p, '/'); i >= 0 {
+		return p[:i+1]
+	}
+	return "/"
+}
+
+// Resolve maps a request path to the feed it should serve, if any. Explicit
+// configuration wins; otherwise a <folder>feed.xml under a log folder is
+// generated automatically.
+func Resolve(cfg *config.Config, st *store.Store, path string) (config.Feed, bool) {
+	for _, f := range cfg.EffectiveFeeds() {
+		if f.Path == path {
+			return f, true
+		}
+	}
+	if !cfg.Feeds.Auto || !strings.HasSuffix(path, "/feed.xml") {
+		return config.Feed{}, false
+	}
+	folder := strings.TrimSuffix(path, "feed.xml")
+	if !IsLogFolder(st, folder) {
+		return config.Feed{}, false
+	}
+	limit := cfg.Feeds.Limit
+	if limit <= 0 {
+		limit = 30
+	}
+	return config.Feed{
+		Path:   path,
+		Source: folder,
+		Page:   folder,
+		Title:  folderTitle(st, folder, cfg.Hostname),
+		Limit:  limit,
+	}, true
+}
+
+// folderTitle names an auto feed after the folder's index page, falling back
+// to the folder name.
+func folderTitle(st *store.Store, folder, hostname string) string {
+	if pg, err := st.GetPage(folder + "index.gmi"); err == nil && pg.Title != "" {
+		return pg.Title
+	}
+	name := strings.Trim(folder, "/")
+	if name == "" {
+		return hostname
+	}
+	return hostname + " · " + name
+}

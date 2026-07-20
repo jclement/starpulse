@@ -58,8 +58,11 @@ type Feeds struct {
 	// Author is the name used in every feed's <author>.
 	Author string `yaml:"author"`
 	// Limit caps entries per feed when a feed does not set its own.
-	Limit int    `yaml:"limit"`
-	List  []Feed `yaml:"list"`
+	Limit int `yaml:"limit"`
+	// Auto publishes <folder>feed.xml for every folder holding dated pages
+	// ("log folders"), with no configuration. On by default.
+	Auto bool   `yaml:"auto"`
+	List []Feed `yaml:"list"`
 }
 
 // Titan configures titan:// uploads over the gemini listener.
@@ -128,6 +131,8 @@ func Default() *Config {
 		Telnet:   Service{Enabled: false, Addr: ":23"},
 		Titan:    Titan{Enabled: false},
 		Tor:      Tor{Enabled: false, Binary: "tor"},
+
+		Feeds: Feeds{Auto: true, Limit: 30},
 
 		MaxUploadBytes: 10 << 20,
 		KeepVersions:   25,
@@ -379,10 +384,12 @@ tor:
 feeds:
   author: ""
   limit: 30
+  # any folder holding date-stamped pages is a "log folder" and publishes
+  # its own feed automatically, e.g. /posts/ -> /posts/feed.xml
+  auto: true
+  # extra feeds beyond the automatic ones (a site-wide feed, now-posts, or
+  # a folder feed you want to retitle)
   list:
-    - path: /posts/feed.xml
-      source: /posts/          # a folder of dated pages
-      title: "My gemlog"
     - path: /now/feed.xml
       source: now              # the now-post stream
       page: /now               # where a human can read them

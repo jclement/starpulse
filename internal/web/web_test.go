@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/log"
 
@@ -221,6 +222,74 @@ func TestDeleteFromList(t *testing.T) {
 	vs, _ := st.ListVersions("/media/pic.png")
 	if len(vs) == 0 {
 		t.Error("deleted file left no restorable version")
+	}
+}
+
+func TestAutoLogFolderFeeds(t *testing.T) {
+	_, st, ts := testServer(t)
+	_, _ = st.SavePage("/posts/index.gmi", []byte("# Gemlog"), "", "t")
+	_, _ = st.SavePage("/posts/2026-07-20-hi.gmi", []byte("# Hi\n\nbody"), "", "t")
+	_, _ = st.SavePage("/projects/2026-07-01-thing.gmi", []byte("# Thing\n\nbody"), "", "t")
+	_, _ = st.SavePage("/about.gmi", []byte("# About"), "", "t")
+
+	// each log folder publishes its own feed, with no configuration
+	code, posts := get(t, ts, "/posts/feed.xml")
+	if code != 200 || !strings.Contains(posts, "<title>Gemlog</title>") || !strings.Contains(posts, "Hi") {
+		t.Fatalf("auto posts feed: %d\n%s", code, posts)
+	}
+	code, proj := get(t, ts, "/projects/feed.xml")
+	if code != 200 || !strings.Contains(proj, "Thing") {
+		t.Fatalf("auto projects feed: %d", code)
+	}
+	if strings.Contains(proj, "Hi") {
+		t.Error("projects feed leaked posts")
+	}
+	// a folder with no dated pages has no feed
+	if code, _ := get(t, ts, "/media/feed.xml"); code != 404 {
+		t.Errorf("feed invented for non-log folder: %d", code)
+	}
+	// both are advertised for discovery
+	_, home := get(t, ts, "/")
+	for _, want := range []string{`href="/posts/feed.xml"`, `href="/projects/feed.xml"`} {
+		if !strings.Contains(home, want) {
+			t.Errorf("auto feed not advertised: %s", want)
+		}
+	}
+}
+
+func TestNewPostDatePrefill(t *testing.T) {
+	_, st, ts := testServer(t)
+	_, _ = st.SavePage("/posts/2026-07-20-hi.gmi", []byte("# Hi"), "", "t")
+	_, _ = st.SavePage("/about.gmi", []byte("# About"), "", "t")
+	client := login(t, ts, testPassword)
+
+	// the admin list offers "new post" on log folders only
+	resp, _ := client.Get(ts.URL + "/admin")
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(b), "new post") {
+		t.Error("no new-post link on the log folder")
+	}
+
+	// creating in a log folder prefills today's date
+	resp2, _ := client.Get(ts.URL + "/admin/edit?new=1&path=" + url.QueryEscape("/posts/"))
+	b2, _ := io.ReadAll(resp2.Body)
+	resp2.Body.Close()
+	today := time.Now().Format("2006-01-02")
+	want := `value="/posts/` + today + `-"`
+	if !strings.Contains(string(b2), want) {
+		t.Errorf("date not prefilled, want %s", want)
+	}
+
+	// a non-log folder gets the bare folder, no date
+	resp3, _ := client.Get(ts.URL + "/admin/edit?new=1&path=" + url.QueryEscape("/media/"))
+	b3, _ := io.ReadAll(resp3.Body)
+	resp3.Body.Close()
+	if !strings.Contains(string(b3), `value="/media/"`) {
+		t.Error("non-log folder should be offered as-is")
+	}
+	if strings.Contains(string(b3), `value="/media/`+today) {
+		t.Error("date prefilled for a non-log folder")
 	}
 }
 

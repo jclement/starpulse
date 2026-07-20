@@ -425,3 +425,5 @@ form.del button.linkish, button.linkish {
   text-decoration: none;
 }
 form.del button.linkish:hover, button.linkish:hover { text-decoration: underline; text-underline-offset: 3px; color: #b3402a; }
+
+a.newpost { font-weight: 400; font-size: 0.9em; margin-left: 0.6em; }

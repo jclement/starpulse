@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 
 	"github.com/jclement/starpulse/internal/auth"
 	"github.com/jclement/starpulse/internal/config"
+	"github.com/jclement/starpulse/internal/feed"
 	"github.com/jclement/starpulse/internal/site"
 	"github.com/jclement/starpulse/internal/store"
 )
@@ -113,7 +115,6 @@ func (s *Server) Handler() http.Handler {
 		fmt.Fprintln(w, "ok")
 	})
 	mux.HandleFunc("/search", s.handleSearch)
-	s.registerFeeds(mux)
 
 	mux.HandleFunc("/login", s.handleLogin)
 	mux.HandleFunc("/logout", s.handleLogout)
@@ -201,8 +202,32 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, titl
 		Theme:    template.CSS(theme),
 		EditPath: editPath,
 		AssetV:   site.BuildVersion,
-		Feeds:    s.Cfg.EffectiveFeeds(),
+		Feeds:    s.discoverableFeeds(),
 	})
+}
+
+// discoverableFeeds lists every feed worth advertising in <head>:
+// configured ones plus each auto-discovered log folder.
+func (s *Server) discoverableFeeds() []config.Feed {
+	out := s.Cfg.EffectiveFeeds()
+	if !s.Cfg.Feeds.Auto {
+		return out
+	}
+	seen := map[string]bool{}
+	for _, f := range out {
+		seen[f.Path] = true
+	}
+	for folder := range feed.LogFolders(s.Store) {
+		path := folder + "feed.xml"
+		if seen[path] {
+			continue
+		}
+		if f, ok := feed.Resolve(s.Cfg, s.Store, path); ok {
+			out = append(out, f)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out
 }
 
 func (s *Server) pageTitle(t string) string {
@@ -218,6 +243,9 @@ func (s *Server) pageTitle(t string) string {
 func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.serveFeed(w, r, r.URL.Path) {
 		return
 	}
 	res := s.Site.Resolve(r.URL.Path, s.proto(r))

@@ -161,3 +161,60 @@ func TestDatedNameAndPageURL(t *testing.T) {
 		t.Errorf("page URL = %q", PageURL("/about.gmi"))
 	}
 }
+
+func TestLogFolderDiscovery(t *testing.T) {
+	st := testStore(t)
+	_, _ = st.SavePage("/posts/2026-07-19-a.gmi", []byte("# A"), "", "t")
+	_, _ = st.SavePage("/posts/2026-07-20-b.gmi", []byte("# B"), "", "t")
+	_, _ = st.SavePage("/posts/index.gmi", []byte("# Gemlog"), "", "t")
+	_, _ = st.SavePage("/projects/2026-07-01-p.gmi", []byte("# P"), "", "t")
+	_, _ = st.SavePage("/about.gmi", []byte("# About"), "", "t") // undated: not a log
+
+	logs := LogFolders(st)
+	if logs["/posts/"] != 2 || logs["/projects/"] != 1 {
+		t.Errorf("log folders = %v", logs)
+	}
+	if _, ok := logs["/"]; ok {
+		t.Error("root should not be a log folder (no dated pages)")
+	}
+	if !IsLogFolder(st, "/posts") || !IsLogFolder(st, "/posts/") {
+		t.Error("IsLogFolder should accept either form")
+	}
+	if IsLogFolder(st, "/nope/") {
+		t.Error("non-log folder reported as log")
+	}
+}
+
+func TestAutoFeedResolution(t *testing.T) {
+	st := testStore(t)
+	_, _ = st.SavePage("/posts/2026-07-20-b.gmi", []byte("# B\n\nbody"), "", "t")
+	_, _ = st.SavePage("/posts/index.gmi", []byte("# Gemlog"), "", "t")
+	_, _ = st.SavePage("/projects/2026-07-01-p.gmi", []byte("# P"), "", "t")
+
+	c := config.Default()
+	c.Hostname = "ex.example"
+
+	// auto feed for each log folder, titled from the folder index
+	f, ok := Resolve(c, st, "/posts/feed.xml")
+	if !ok || f.Source != "/posts/" || f.Title != "Gemlog" {
+		t.Fatalf("auto posts feed = %+v ok=%v", f, ok)
+	}
+	f2, ok2 := Resolve(c, st, "/projects/feed.xml")
+	if !ok2 || f2.Source != "/projects/" {
+		t.Fatalf("auto projects feed = %+v ok=%v", f2, ok2)
+	}
+	// folder without dated pages has no feed
+	if _, ok := Resolve(c, st, "/nope/feed.xml"); ok {
+		t.Error("feed invented for a non-log folder")
+	}
+	// explicit config wins over auto
+	c.Feeds.List = []config.Feed{{Path: "/posts/feed.xml", Source: "/posts/", Title: "Custom"}}
+	if f, _ := Resolve(c, st, "/posts/feed.xml"); f.Title != "Custom" {
+		t.Errorf("explicit config should win: %+v", f)
+	}
+	// auto can be switched off
+	c.Feeds.Auto = false
+	if _, ok := Resolve(c, st, "/projects/feed.xml"); ok {
+		t.Error("auto feeds still served with auto disabled")
+	}
+}

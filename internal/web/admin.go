@@ -10,7 +10,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/jclement/starpulse/internal/feed"
 	"github.com/jclement/starpulse/internal/site"
 	"github.com/jclement/starpulse/internal/store"
 )
@@ -74,6 +76,7 @@ func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
 	// bucket by folder first — a flat path sort interleaves subfolder pages
 	// with root pages (/posts/… sorts between /now.gmi and /projects.gmi),
 	// which would split a folder into several groups.
+	logFolders := feed.LogFolders(s.Store)
 	byFolder := map[string][]store.Meta{}
 	var folders []string
 	for _, m := range metas {
@@ -96,8 +99,14 @@ func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
 		if label == "/" {
 			label = "/ (root)"
 		}
-		fmt.Fprintf(&b, `<tbody class="folder-group" data-folder="%s"><tr class="folder-row"><td colspan="4">%s <span class="dim">%d</span></td></tr>`+"\n",
-			html.EscapeString(strings.ToLower(folder)), html.EscapeString(label), len(rows))
+		newLink := ""
+		if logFolders[folder] > 0 {
+			// a log folder: offer a dated post, prefilled with today
+			newLink = fmt.Sprintf(` <a class="newpost" href="/admin/edit?new=1&amp;path=%s">+ new post</a>`,
+				url.QueryEscape(folder))
+		}
+		fmt.Fprintf(&b, `<tbody class="folder-group" data-folder="%s"><tr class="folder-row"><td colspan="4">%s <span class="dim">%d</span>%s</td></tr>`+"\n",
+			html.EscapeString(strings.ToLower(folder)), html.EscapeString(label), len(rows), newLink)
 		for _, m := range rows {
 			title := m.Title
 			view := ""
@@ -244,6 +253,10 @@ type editorData struct {
 func (s *Server) adminEdit(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Query().Get("path")
 	isNew := r.URL.Query().Get("new") == "1" || p == ""
+	// creating inside a log folder? offer today's date-stamped filename
+	if isNew && strings.HasSuffix(p, "/") && feed.IsLogFolder(s.Store, p) {
+		p += time.Now().In(s.loc()).Format("2006-01-02") + "-"
+	}
 	content := ""
 	if !isNew {
 		pg, err := s.Store.GetPage(p)

@@ -137,29 +137,44 @@ Two conventions, both supported:
   labels begin with an ISO date. `{{list}}` already emits exactly that, so a
   folder index like `/posts/` is subscribable in Lagrange or Amfora with no
   configuration at all. This is the convention to prefer for gemini readers.
-- **On the web**, subscribers want **Atom**. Configure as many as you like;
-  each is served at its own path (over HTTP *and* gemini), and every one is
-  advertised in the HTML `<head>` for auto-discovery.
+- **On the web**, subscribers want **Atom** — and those come for free.
+
+Any folder holding **date-stamped pages** is a *log folder*: a gemlog, a
+project journal, release notes, whatever. starpulse discovers them from the
+content itself and publishes `<folder>feed.xml` for each, with no
+configuration:
+
+```
+/posts/2026-07-20-hello.gmi     ->  /posts/feed.xml
+/projects/2026-07-01-thing.gmi  ->  /projects/feed.xml
+```
+
+The feed is titled after the folder's `index.gmi`, served over HTTP *and*
+gemini, and advertised in the HTML `<head>` for auto-discovery. Only **dated**
+filenames become entries — undated pages in the same folder are permanent
+pages, not posts.
+
+The admin knows about log folders too: each one gets a **+ new post** link
+that opens the editor with today's date already in the filename.
+
+Configure only what you want beyond that:
 
 ```yaml
 feeds:
   author: "Your Name"     # used in every feed's <author>
   limit: 30               # default entries per feed
+  auto: true              # per-folder feeds (default)
   list:
-    - path: /posts/feed.xml    # where the feed is served
-      source: /posts/          # a folder of dated pages
-      title: "My gemlog"
     - path: /now/feed.xml
       source: now              # the now-post stream
       page: /now               # where a human reads them
       title: "My now posts"
+    - path: /feed.xml          # a site-wide feed, if you want one
+      source: /
 ```
 
-`source` is a folder of dated pages (`/posts/`), `/` for the whole site, or
-the literal `now` for micro-posts. Only **dated** filenames
-(`2026-07-20-title.gmi`) enter a page feed — undated pages are treated as
-permanent pages, not posts. With no `feeds:` block configured, a single
-site-wide feed is published at `/feed.xml`.
+`source` is a folder, `/` for the whole site, or the literal `now`. An
+explicit entry overrides the automatic feed at the same path.
 
 ## Editing
 

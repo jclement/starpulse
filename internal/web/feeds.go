@@ -2,8 +2,8 @@ package web
 
 import (
 	"net/http"
+	"strings"
 
-	"github.com/jclement/starpulse/internal/config"
 	"github.com/jclement/starpulse/internal/feed"
 )
 
@@ -17,38 +17,19 @@ func (s *Server) feedBuilder() *feed.Builder {
 	}
 }
 
-// registerFeeds serves every configured feed at its own path.
-func (s *Server) registerFeeds(mux *http.ServeMux) {
-	b := s.feedBuilder()
-	seen := map[string]bool{}
-	for _, f := range s.Cfg.EffectiveFeeds() {
-		if seen[f.Path] {
-			continue
-		}
-		seen[f.Path] = true
-		cfg := f // capture
-		mux.HandleFunc(cfg.Path, func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/atom+xml; charset=utf-8")
-			w.Header().Set("Cache-Control", "public, max-age=900")
-			_, _ = w.Write([]byte(b.Build(cfg, s.baseURL(r))))
-		})
+// serveFeed writes the feed for path if one exists there. Feeds are resolved
+// per request rather than registered up front, because log folders are
+// discovered from content and can appear while the server is running.
+func (s *Server) serveFeed(w http.ResponseWriter, r *http.Request, path string) bool {
+	if !strings.HasSuffix(path, ".xml") {
+		return false
 	}
-	// keep the historical alias working when it isn't explicitly configured
-	if !seen["/posts/feed.xml"] && !seen["/feed.xml"] {
-		return
+	f, ok := feed.Resolve(s.Cfg, s.Store, path)
+	if !ok {
+		return false
 	}
-	if !seen["/posts/feed.xml"] {
-		alias := firstFeed(s.Cfg.EffectiveFeeds())
-		mux.HandleFunc("/posts/feed.xml", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/atom+xml; charset=utf-8")
-			_, _ = w.Write([]byte(b.Build(alias, s.baseURL(r))))
-		})
-	}
-}
-
-func firstFeed(fs []config.Feed) config.Feed {
-	if len(fs) > 0 {
-		return fs[0]
-	}
-	return config.Feed{Path: "/feed.xml", Source: "/"}
+	w.Header().Set("Content-Type", "application/atom+xml; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=900")
+	_, _ = w.Write([]byte(s.feedBuilder().Build(f, s.baseURL(r))))
+	return true
 }

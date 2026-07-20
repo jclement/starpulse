@@ -181,10 +181,10 @@ func (s *Server) serveGemini(conn net.Conn, u *url.URL) (int, string) {
 	if raw, found := strings.CutPrefix(u.Path, "/raw/"); found {
 		return s.serveRaw(conn, "/"+raw)
 	}
-	// configured Atom feeds are served on gemini as well — the idiomatic
-	// gemini feed is a page of dated links, but some clients want Atom
-	for _, f := range s.Cfg.EffectiveFeeds() {
-		if u.Path == f.Path {
+	// Atom feeds are served on gemini too — the idiomatic gemini feed is a
+	// page of dated links, but some clients want Atom
+	if strings.HasSuffix(u.Path, ".xml") {
+		if f, ok := feed.Resolve(s.Cfg, s.Store, u.Path); ok {
 			b := &feed.Builder{Store: s.Store, Hostname: s.Cfg.Hostname,
 				Author: s.Cfg.Feeds.Author, Loc: s.Loc}
 			respond(conn, 20, "application/atom+xml")
