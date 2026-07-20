@@ -16,6 +16,7 @@ import (
 	"github.com/jclement/starpulse/internal/site"
 	"github.com/jclement/starpulse/internal/sshui"
 	"github.com/jclement/starpulse/internal/store"
+	"github.com/jclement/starpulse/internal/telnet"
 	"github.com/jclement/starpulse/internal/tor"
 	"github.com/jclement/starpulse/internal/web"
 )
@@ -46,6 +47,7 @@ func Serve(cfg *config.Config, logger *log.Logger) error {
 		"http", cfg.HTTP.Enabled,
 		"https", cfg.HTTPS.Enabled,
 		"ssh", cfg.SSH.Enabled,
+		"telnet", cfg.Telnet.Enabled,
 		"titan", cfg.Titan.Enabled,
 		"tor", cfg.Tor.Enabled)
 	if cfg.AdminPassword == "" {
@@ -85,7 +87,7 @@ func Serve(cfg *config.Config, logger *log.Logger) error {
 		}
 	}
 
-	errCh := make(chan error, 3)
+	errCh := make(chan error, 4)
 
 	if cfg.SSH.Enabled {
 		sshSrv, err := sshui.New(cfg, st, sy, logger.With("proto", "ssh"))
@@ -93,6 +95,11 @@ func Serve(cfg *config.Config, logger *log.Logger) error {
 			return fmt.Errorf("ssh server: %w", err)
 		}
 		go func() { errCh <- sshSrv.ListenAndServe() }()
+	}
+
+	if cfg.Telnet.Enabled {
+		telSrv := &telnet.Server{Cfg: cfg, Store: st, Site: sy, Log: logger.With("proto", "telnet")}
+		go func() { errCh <- telSrv.ListenAndServe() }()
 	}
 
 	if cfg.Gemini.Enabled {

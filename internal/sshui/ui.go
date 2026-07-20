@@ -38,6 +38,7 @@ type model struct {
 	store    *store.Store
 	hostname string
 	admin    bool
+	proto    string // stats bucket: "ssh" or "telnet"
 	renderer *lipgloss.Renderer
 	st       *styles
 
@@ -70,6 +71,15 @@ type model struct {
 }
 
 func newModel(sy *site.Site, st *store.Store, hostname string, admin bool, w, h int, renderer *lipgloss.Renderer) *model {
+	return newProtoModel(sy, st, hostname, admin, w, h, renderer, "ssh")
+}
+
+// NewBrowserModel builds the capsule TUI for a non-ssh transport (telnet).
+func NewBrowserModel(sy *site.Site, st *store.Store, hostname string, w, h int, renderer *lipgloss.Renderer, proto string) tea.Model {
+	return newProtoModel(sy, st, hostname, false, w, h, renderer, proto)
+}
+
+func newProtoModel(sy *site.Site, st *store.Store, hostname string, admin bool, w, h int, renderer *lipgloss.Renderer, proto string) *model {
 	if renderer == nil {
 		renderer = lipgloss.DefaultRenderer()
 	}
@@ -78,6 +88,7 @@ func newModel(sy *site.Site, st *store.Store, hostname string, admin bool, w, h 
 		store:    st,
 		hostname: hostname,
 		admin:    admin,
+		proto:    proto,
 		renderer: renderer,
 		st:       makeStyles(renderer),
 		width:    w,
@@ -93,7 +104,7 @@ func (m *model) Init() tea.Cmd { return nil }
 // ---- navigation ---------------------------------------------------------
 
 func (m *model) navigate(url string, pushHistory bool) {
-	res := m.site.Resolve(url, "ssh")
+	res := m.site.Resolve(url, m.proto)
 	switch res.Type {
 	case site.RedirectResult:
 		res = m.site.Resolve(res.Location, "")
@@ -524,7 +535,7 @@ func (m *model) header(label string) string {
 	if gap < 1 {
 		gap = 1
 	}
-	return m.st.bar.Render(brand) + strings.Repeat(" ", gap) + m.st.barDim.Render(right)
+	return m.st.bar.Render(brand+strings.Repeat(" ", gap)) + m.st.barDim.Render(right)
 }
 
 // bbsPad right-pads styled content to the full terminal width with the

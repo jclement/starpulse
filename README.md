@@ -4,8 +4,10 @@ A single-binary smolweb CMS. One SQLite file, four doors in:
 
 - **gemini://** (with **titan://** editing via client certificates)
 - **http://** and **https://** (automatic Let's Encrypt)
-- **ssh** — a full TUI gemini browser in your terminal (`ssh guest@host -p 2222`),
+- **ssh** — a full TUI gemini browser in your terminal (`ssh guest@host`),
   with a pico-style full-screen editor when you log in as `admin`
+- **telnet** — the same TUI browser, read-only, over honest-to-goodness
+  telnet (`telnet host`) — BBS nostalgia included
 - **tor** hidden service (managed automatically — both web and gemini)
 
 Content is [gemtext](https://geminiprotocol.net/docs/gemtext.gmi), authored in a

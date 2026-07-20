@@ -367,7 +367,7 @@ func (s *Server) adminStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// pivot into per-page rows with per-proto columns
-	protos := []string{"http", "https", "gemini", "ssh", "http+tor", "gemini+tor"}
+	protos := []string{"http", "https", "gemini", "ssh", "telnet", "http+tor", "gemini+tor"}
 	type row struct {
 		total int64
 		by    map[string]int64

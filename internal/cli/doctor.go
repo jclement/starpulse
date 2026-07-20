@@ -115,6 +115,16 @@ func Doctor(cfg *config.Config) error {
 		}
 	}
 
+	if cfg.Telnet.Enabled {
+		conn, err := net.DialTimeout("tcp", localAddr(cfg.Telnet.Addr), 3*time.Second)
+		if err != nil {
+			add(false, "telnet %s not reachable: %v", cfg.Telnet.Addr, err)
+		} else {
+			conn.Close()
+			add(true, "telnet %s reachable", cfg.Telnet.Addr)
+		}
+	}
+
 	// dns
 	if cfg.Hostname != "localhost" {
 		if addrs, err := net.LookupHost(cfg.Hostname); err != nil {

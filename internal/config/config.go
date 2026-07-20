@@ -56,6 +56,8 @@ type Config struct {
 	// SSH serves a TUI gemini browser (and, for the admin user, a
 	// full-screen editor) over ssh.
 	SSH Service `yaml:"ssh"`
+	// Telnet serves the same TUI browser read-only (guest, no auth).
+	Telnet Service `yaml:"telnet"`
 
 	Titan Titan `yaml:"titan"`
 	Tor   Tor   `yaml:"tor"`
@@ -78,6 +80,7 @@ func Default() *Config {
 		HTTP:     Service{Enabled: true, Addr: ":80"},
 		HTTPS:    HTTPSService{Service: Service{Enabled: false, Addr: ":443"}, ACME: true},
 		SSH:      Service{Enabled: false, Addr: ":2222"},
+		Telnet:   Service{Enabled: false, Addr: ":23"},
 		Titan:    Titan{Enabled: false},
 		Tor:      Tor{Enabled: false, Binary: "tor"},
 
@@ -176,6 +179,8 @@ func applyEnv(c *Config) {
 
 	boolean("STARPULSE_SSH", &c.SSH.Enabled)
 	str("STARPULSE_SSH_ADDR", &c.SSH.Addr)
+	boolean("STARPULSE_TELNET", &c.Telnet.Enabled)
+	str("STARPULSE_TELNET_ADDR", &c.Telnet.Addr)
 
 	boolean("STARPULSE_TITAN", &c.Titan.Enabled)
 	if v, ok := os.LookupEnv("STARPULSE_TITAN_CERTS"); ok {
@@ -210,7 +215,7 @@ func (c *Config) Validate() error {
 	if c.Titan.Enabled && len(c.NormalizedFingerprints()) == 0 {
 		return fmt.Errorf("titan enabled but no cert_fingerprints configured")
 	}
-	if !c.Gemini.Enabled && !c.HTTP.Enabled && !c.HTTPS.Enabled && !c.SSH.Enabled {
+	if !c.Gemini.Enabled && !c.HTTP.Enabled && !c.HTTPS.Enabled && !c.SSH.Enabled && !c.Telnet.Enabled {
 		return fmt.Errorf("no services enabled")
 	}
 	return nil
@@ -249,6 +254,11 @@ https:
 ssh:
   enabled: false
   addr: ":2222"
+
+# Telnet door: same TUI browser, read-only guest, no encryption — retro fun.
+telnet:
+  enabled: false
+  addr: ":23"
 
 # titan:// uploads (edit content from a gemini client with a client cert).
 titan:
