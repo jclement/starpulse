@@ -207,13 +207,14 @@ func (s *Site) pageResult(urlPath string, pg *store.Page, proto string) *Result 
 		}
 	}
 
+	ctx := expandCtx{urlPath: urlPath, page: pg}
 	var parts []string
 	if h := s.nearestSpecial(pg.Path, ".header"); h != "" && !fm.NoHeader {
-		parts = append(parts, s.expand(h, path.Dir(pg.Path), urlPath, 0))
+		parts = append(parts, s.expand(h, path.Dir(pg.Path), ctx, 0))
 	}
-	parts = append(parts, s.expand(body, baseDir, urlPath, 0))
+	parts = append(parts, s.expand(body, baseDir, ctx, 0))
 	if f := s.nearestSpecial(pg.Path, ".footer"); f != "" && !fm.NoFooter {
-		parts = append(parts, s.expand(f, path.Dir(pg.Path), urlPath, 0))
+		parts = append(parts, s.expand(f, path.Dir(pg.Path), ctx, 0))
 	}
 
 	title := fm.Title
@@ -281,13 +282,14 @@ func (s *Site) syntheticListing(dir, proto string) *Result {
 	}
 	src := fmt.Sprintf("# %s\n\n{{list}}\n", name)
 	anchor := indexPath(dir)
+	ctx := expandCtx{urlPath: dir}
 	var parts []string
 	if h := s.nearestSpecial(anchor, ".header"); h != "" {
-		parts = append(parts, s.expand(h, path.Dir(anchor), dir, 0))
+		parts = append(parts, s.expand(h, path.Dir(anchor), ctx, 0))
 	}
-	parts = append(parts, s.expand(src, strings.TrimSuffix(dir, "/"), dir, 0))
+	parts = append(parts, s.expand(src, strings.TrimSuffix(dir, "/"), ctx, 0))
 	if f := s.nearestSpecial(anchor, ".footer"); f != "" {
-		parts = append(parts, s.expand(f, path.Dir(anchor), dir, 0))
+		parts = append(parts, s.expand(f, path.Dir(anchor), ctx, 0))
 	}
 	return &Result{Type: PageResult, Page: &Page{
 		URLPath: dir,
@@ -304,13 +306,14 @@ func (s *Site) nowPage(proto string) *Result {
 	}
 	src := "# Now\n\nSmall updates, newest first.\n\n{{now 0}}\n"
 	anchor := "/now.gmi"
+	ctx := expandCtx{urlPath: "/now"}
 	var parts []string
 	if h := s.nearestSpecial(anchor, ".header"); h != "" {
-		parts = append(parts, s.expand(h, "/", "/now", 0))
+		parts = append(parts, s.expand(h, "/", ctx, 0))
 	}
-	parts = append(parts, s.expand(src, "/", "/now", 0))
+	parts = append(parts, s.expand(src, "/", ctx, 0))
 	if f := s.nearestSpecial(anchor, ".footer"); f != "" {
-		parts = append(parts, s.expand(f, "/", "/now", 0))
+		parts = append(parts, s.expand(f, "/", ctx, 0))
 	}
 	return &Result{Type: PageResult, Page: &Page{
 		URLPath: "/now",
@@ -326,17 +329,29 @@ var lineDirectiveRe = regexp.MustCompile(`(?m)^\{\{\s*(list|index|include|random
 
 const maxIncludeDepth = 4
 
+// expandCtx is the served-page context inline tokens draw from.
+type expandCtx struct {
+	urlPath string
+	page    *store.Page // body source page; nil for synthetic pages
+}
+
 // expand replaces directives in a document. baseDir is the URL directory of
-// the containing document; urlPath is the page being served ({{count}}).
-func (s *Site) expand(body, baseDir, urlPath string, depth int) string {
+// the containing document; ctx describes the page being served ({{count}},
+// {{updated}}, {{rev}}).
+func (s *Site) expand(body, baseDir string, ctx expandCtx, depth int) string {
 	if depth > maxIncludeDepth {
 		return body
 	}
 	// inline tokens work mid-sentence
 	body = strings.ReplaceAll(body, "{{version}}", BuildVersion)
-	body = strings.ReplaceAll(body, "{{updated}}", updatedString())
+	if strings.Contains(body, "{{updated}}") {
+		body = strings.ReplaceAll(body, "{{updated}}", s.updatedString(ctx))
+	}
+	if strings.Contains(body, "{{rev}}") {
+		body = strings.ReplaceAll(body, "{{rev}}", s.revString(ctx))
+	}
 	if strings.Contains(body, "{{count}}") {
-		body = strings.ReplaceAll(body, "{{count}}", fmt.Sprintf("%d", s.Store.Count(canonicalKey(urlPath))))
+		body = strings.ReplaceAll(body, "{{count}}", fmt.Sprintf("%d", s.Store.Count(canonicalKey(ctx.urlPath))))
 	}
 
 	return lineDirectiveRe.ReplaceAllStringFunc(body, func(m string) string {
@@ -370,7 +385,7 @@ func (s *Site) expand(body, baseDir, urlPath string, depth int) string {
 				}
 			}
 			inner, _ := stripFrontMatter(string(pg.Content))
-			return s.expand(inner, path.Dir(pg.Path), urlPath, depth+1)
+			return s.expand(inner, path.Dir(pg.Path), ctx, depth+1)
 		case "random":
 			ref := resolveRef(baseDir, arg)
 			pg, err := s.Store.GetPage(ref)
@@ -407,11 +422,22 @@ func resolveRef(baseDir, ref string) string {
 	return path.Clean(path.Join(baseDir, ref))
 }
 
-func updatedString() string {
-	if BuildDate != "" {
-		return BuildDate
+// updatedString renders {{updated}}: the served page's last-edit date, or
+// "recently" on synthetic pages.
+func (s *Site) updatedString(ctx expandCtx) string {
+	if ctx.page != nil {
+		return ctx.page.Updated.Format("2006-01-02")
 	}
 	return "recently"
+}
+
+// revString renders {{rev}}: the served page's revision number (saved
+// versions + 1).
+func (s *Site) revString(ctx expandCtx) string {
+	if ctx.page == nil {
+		return "1"
+	}
+	return fmt.Sprintf("%d", s.Store.CountVersions(ctx.page.Path)+1)
 }
 
 // Entry is one row of a directory listing.

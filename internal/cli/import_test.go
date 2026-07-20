@@ -30,9 +30,9 @@ func TestTranslatePath(t *testing.T) {
 }
 
 func TestTranslateContent(t *testing.T) {
-	in := "{{index /posts 6}}\n{{index}}\n{{counter}}\n{{random /_taglines.txt}}"
+	in := "{{index /posts 6}}\n{{index}}\n{{counter}}\n{{hash}}\n{{random /_taglines.txt}}"
 	got := translateContent(in)
-	want := "{{list /posts 6}}\n{{list}}\n{{count}}\n{{random /.taglines.txt}}"
+	want := "{{list /posts 6}}\n{{list}}\n{{count}}\nr{{rev}}\n{{random /.taglines.txt}}"
 	if got != want {
 		t.Errorf("translateContent:\n%s\nwant:\n%s", got, want)
 	}

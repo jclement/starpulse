@@ -3,6 +3,7 @@ package site
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jclement/starpulse/internal/store"
 )
@@ -226,6 +227,34 @@ func TestNowDirectiveAndBuiltinPage(t *testing.T) {
 	if r := sy.Resolve("/now", ""); r.Page.Title != "My custom now" {
 		t.Errorf("custom /now shadowed: %+v", r.Page)
 	}
+}
+
+func TestRevAndUpdatedDirectives(t *testing.T) {
+	sy, st := testSite(t)
+	save(t, st, "/.footer", "last updated {{updated}} · r{{rev}}")
+	save(t, st, "/page.gmi", "# One")
+
+	g := sy.Resolve("/page", "").Page.Gemtext
+	today := timeNowDate()
+	if !strings.Contains(g, "last updated "+today+" · r1") {
+		t.Errorf("first revision footer wrong:\n%s", g)
+	}
+	// two edits → r3
+	save(t, st, "/page.gmi", "# Two")
+	save(t, st, "/page.gmi", "# Three")
+	g = sy.Resolve("/page", "").Page.Gemtext
+	if !strings.Contains(g, "· r3") {
+		t.Errorf("rev after edits wrong:\n%s", g)
+	}
+	// synthetic pages don't explode
+	g = sy.Resolve("/now", "").Page.Gemtext
+	if !strings.Contains(g, "· r1") || !strings.Contains(g, "recently") {
+		t.Errorf("synthetic rev/updated wrong:\n%s", g)
+	}
+}
+
+func timeNowDate() string {
+	return time.Now().Format("2006-01-02")
 }
 
 func TestListEntryTitlesAndDirs(t *testing.T) {

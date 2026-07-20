@@ -108,7 +108,9 @@ Dated filenames get listed newest-first and feed `/feed.xml`.
 | `{{now [limit]}}` | your latest "now" micro-posts |
 | `{{random /path}}` | one random line from a file (taglines!) |
 | `{{count}}` | the page's view counter |
-| `{{version}}` / `{{updated}}` | build stamp |
+| `{{rev}}` | the page's revision number (edits so far) |
+| `{{updated}}` | the page's last-edit date |
+| `{{version}}` | server build version |
 
 **Now posts** are lightweight timestamped updates — post from the admin, API,
 or MCP; they show up at `/now` and anywhere you put `{{now}}`.

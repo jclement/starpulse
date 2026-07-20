@@ -519,6 +519,13 @@ func (s *Store) DeleteNow(id int64) error {
 	return nil
 }
 
+// CountVersions returns how many historical versions a path has.
+func (s *Store) CountVersions(p string) int64 {
+	var n int64
+	_ = s.db.QueryRow(`SELECT COUNT(*) FROM versions WHERE path = ?`, p).Scan(&n)
+	return n
+}
+
 // Totals returns overall row counts for status displays.
 func (s *Store) Totals() (pages, versions, nows int64) {
 	_ = s.db.QueryRow(`SELECT COUNT(*) FROM pages`).Scan(&pages)

@@ -136,7 +136,7 @@ func (s *Server) adminEdit(w http.ResponseWriter, r *http.Request) {
 	if !isNew {
 		fmt.Fprintf(&b, `<form class="inline" method="post" action="/admin/delete"><input type="hidden" name="path" value="%s"><button class="danger" type="submit">delete page</button></form>`, html.EscapeString(p))
 	}
-	b.WriteString(`<p class="dim">Directives: <code>{{list [folder] [limit]}}</code> · <code>{{include /path}}</code> · <code>{{now [limit]}}</code> · <code>{{random /path}}</code> · <code>{{count}}</code> · <code>{{version}}</code> · <code>{{updated}}</code></p>`)
+	b.WriteString(`<p class="dim">Directives: <code>{{list [folder] [limit]}}</code> · <code>{{include /path}}</code> · <code>{{now [limit]}}</code> · <code>{{random /path}}</code> · <code>{{count}}</code> · <code>{{rev}}</code> · <code>{{updated}}</code> · <code>{{version}}</code></p>`)
 	s.adminRender(w, r, title, b.String())
 }
 

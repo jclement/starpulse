@@ -112,7 +112,7 @@ func translateContent(src string) string {
 		"{{index}}", "{{list}}",
 		"{{index ", "{{list ",
 		"{{counter}}", "{{count}}",
-		"{{hash}}", "{{version}}",
+		"{{hash}}", "r{{rev}}",
 		"{{random /_", "{{random /.",
 		"{{include /_", "{{include /.",
 	)
