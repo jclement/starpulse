@@ -317,7 +317,12 @@ form.admin input:focus, form.admin textarea:focus { outline: 2px solid var(--acc
 form.inline { display: inline; }
 .bar { display: flex; gap: 0.6em; align-items: center; flex-wrap: wrap; margin: 1em 0; }
 
-table.admin { width: 100%; font-size: 0.9em; }
+/* the base `table` rule sets display:block for horizontal scrolling, which
+   makes the inner table shrink-to-fit; admin tables must fill their column
+   so they line up with the filter box above. */
+table.admin { display: table; width: 100%; font-size: 0.9em; }
+/* let the path column absorb the slack (other columns are nowrap) */
+table.admin td:first-child, table.admin th:first-child { width: 100%; }
 table.admin td, table.admin th { border: none; border-bottom: 1px solid var(--line); }
 table.admin tr:hover td { background: var(--pre-bg); }
 .dim { color: var(--dim); }
