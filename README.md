@@ -124,6 +124,11 @@ Dated filenames get listed newest-first and feed `/feed.xml`.
 API, or MCP; they render anywhere you put `{{now}}` (the starter site seeds a
 `/now.gmi` doing exactly that).
 
+A path with no extension gets `.gmi` automatically, so typing `/about` in the
+editor creates `/about.gmi` rather than an unviewable binary. Renaming a page
+(change its path in the editor and save) moves its history and view counts
+along with it.
+
 Every save keeps the previous content as a **version** (deletes too), so
 undo is always one click away. Per-page **stats** are broken down by door:
 `http`, `gemini`, `http+tor`, `gemini+tor`. Full-text **search** (SQLite FTS5)
@@ -150,9 +155,19 @@ configuration:
 ```
 
 The feed is titled after the folder's `index.gmi`, served over HTTP *and*
-gemini, and advertised in the HTML `<head>` for auto-discovery. Only **dated**
-filenames become entries — undated pages in the same folder are permanent
-pages, not posts.
+gemini, and advertised in the HTML `<head>` for auto-discovery.
+
+**What makes something a post** is having a date, and a date comes from one of
+two places — never from the file's creation timestamp:
+
+1. a `date:` in front matter, which wins and lets you keep a clean URL
+   (`/posts/hello.gmi` published `2026-07-20`), or
+2. a `YYYY-MM-DD-` filename prefix (`/posts/2026-07-20-hello.gmi`).
+
+An undated page in a log folder is just a permanent page. Creation timestamps
+are deliberately *not* used: every page has one, so they could not tell a post
+from a page, and they would make backdating or importing an archive
+impossible. A date is a statement of intent, so it stays explicit.
 
 The admin knows about log folders too: each one gets a **+ new post** link
 that opens the editor with today's date already in the filename.

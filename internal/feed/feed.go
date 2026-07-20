@@ -139,7 +139,7 @@ func (b *Builder) pageEntries(f config.Feed, baseURL string) []entry {
 		if prefix != "/" && !strings.HasPrefix(m.Path, prefix) {
 			continue
 		}
-		date := DatedName(m.Path)
+		date := m.Date
 		if date == "" {
 			continue // only dated pages are feed-worthy
 		}
@@ -254,7 +254,8 @@ func sortByPublishedDesc(e []entry) {
 	}
 }
 
-// DatedName returns the YYYY-MM-DD prefix of a filename, or "".
+// DatedName returns the YYYY-MM-DD prefix of a filename, or "". Prefer the
+// page's stored Date, which also honours a front-matter "date:".
 func DatedName(p string) string {
 	base := p[strings.LastIndexByte(p, '/')+1:]
 	if len(base) >= 11 && base[4] == '-' && base[7] == '-' && (base[10] == '-' || base[10] == '_') {
@@ -291,7 +292,7 @@ func LogFolders(st *store.Store) map[string]int {
 		if m.Binary || store.Hidden(m.Path) || !strings.HasSuffix(m.Path, ".gmi") {
 			continue
 		}
-		if DatedName(m.Path) == "" {
+		if m.Date == "" {
 			continue
 		}
 		out[folderOf(m.Path)]++

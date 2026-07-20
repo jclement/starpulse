@@ -218,3 +218,40 @@ func TestAutoFeedResolution(t *testing.T) {
 		t.Error("auto feeds still served with auto disabled")
 	}
 }
+
+func TestDateSources(t *testing.T) {
+	st := testStore(t)
+	// 1. filename date — the conventional post
+	_, _ = st.SavePage("/posts/2026-07-19-named.gmi", []byte("# Named\n\nbody"), "", "t")
+	// 2. front-matter date, clean URL — also a post
+	_, _ = st.SavePage("/posts/clean.gmi",
+		[]byte("---\ntitle: Clean\ndate: 2026-07-20\n---\n# Clean\n\nbody"), "", "t")
+	// 3. front matter overrides the filename
+	_, _ = st.SavePage("/posts/2020-01-01-wrong.gmi",
+		[]byte("---\ndate: 2026-07-21\n---\n# Corrected\n\nbody"), "", "t")
+	// 4. no date anywhere — a permanent page, never a post
+	_, _ = st.SavePage("/posts/about.gmi", []byte("# About\n\nbody"), "", "t")
+
+	b := &Builder{Store: st, Hostname: "ex.example", Loc: time.UTC}
+	out := b.Build(config.Feed{Path: "/posts/feed.xml", Source: "/posts/", Limit: 30}, "https://ex.example")
+
+	for _, want := range []string{"Named", "Clean", "Corrected"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("feed missing %q", want)
+		}
+	}
+	if strings.Contains(out, ">About<") {
+		t.Error("undated page treated as a post")
+	}
+	// front matter wins: the corrected post sorts newest
+	if !strings.Contains(out, "<published>2026-07-21T00:00:00Z</published>") {
+		t.Errorf("front-matter date did not override the filename:\n%s", out)
+	}
+	if strings.Index(out, "Corrected") > strings.Index(out, "Clean") {
+		t.Error("front-matter date not used for ordering")
+	}
+	// and the folder counts as a log folder on either signal
+	if LogFolders(st)["/posts/"] != 3 {
+		t.Errorf("log folder count = %d, want 3", LogFolders(st)["/posts/"])
+	}
+}

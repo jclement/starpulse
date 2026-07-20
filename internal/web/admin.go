@@ -300,18 +300,24 @@ func (s *Server) adminSave(w http.ResponseWriter, r *http.Request) {
 	content := r.FormValue("content")
 	// textarea newlines arrive as \r\n
 	content = strings.ReplaceAll(content, "\r\n", "\n")
-	cp, ok := store.CleanPath(p)
+	cp, ok := store.CleanPath(store.DefaultExt(p))
 	if !ok {
 		http.Redirect(w, r, "/admin?msg="+url.QueryEscape("invalid path: "+p), http.StatusSeeOther)
 		return
 	}
-	if _, err := s.Store.SavePage(cp, []byte(content), "", "web"); err != nil {
+	// a rename moves the page and its history rather than leaving a copy
+	if oldPath := r.FormValue("oldpath"); oldPath != "" && oldPath != cp {
+		if _, err := s.Store.RenamePage(oldPath, cp, "web"); err != nil {
+			http.Redirect(w, r, "/admin/edit?path="+url.QueryEscape(oldPath)+
+				"&msg="+url.QueryEscape("rename failed: "+err.Error()), http.StatusSeeOther)
+			return
+		}
+	}
+	// the editor only produces text — never store it as an opaque blob
+	mime := store.TextMime(store.MimeFor(cp))
+	if _, err := s.Store.SavePage(cp, []byte(content), mime, "web"); err != nil {
 		http.Redirect(w, r, "/admin?msg="+url.QueryEscape("save failed: "+err.Error()), http.StatusSeeOther)
 		return
-	}
-	// renamed? remove the old page (its history is preserved under the old path)
-	if old := r.FormValue("oldpath"); old != "" && old != cp {
-		_ = s.Store.DeletePage(old, "web (renamed to "+cp+")")
 	}
 	http.Redirect(w, r, "/admin/edit?path="+url.QueryEscape(cp), http.StatusSeeOther)
 }

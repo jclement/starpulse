@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 
@@ -28,9 +29,12 @@ type Store struct {
 
 // Page is one stored page or file.
 type Page struct {
-	ID      int64
-	Path    string // canonical: "/index.gmi", "/posts/.header", "/media/cat.png"
-	Title   string
+	ID    int64
+	Path  string // canonical: "/index.gmi", "/posts/.header", "/media/cat.png"
+	Title string
+	// Date is the publication date (YYYY-MM-DD) when this page is a post,
+	// otherwise "". See PageDate for how it is derived.
+	Date    string
 	Content []byte
 	Mime    string
 	Binary  bool
@@ -42,6 +46,7 @@ type Page struct {
 type Meta struct {
 	Path    string
 	Title   string
+	Date    string
 	Mime    string
 	Binary  bool
 	Size    int64
@@ -88,6 +93,7 @@ CREATE TABLE IF NOT EXISTS pages (
 	content  BLOB NOT NULL,
 	mime     TEXT NOT NULL,
 	binary   INTEGER NOT NULL DEFAULT 0,
+	date     TEXT NOT NULL DEFAULT '',
 	created  INTEGER NOT NULL,
 	updated  INTEGER NOT NULL
 );
@@ -135,7 +141,18 @@ func Open(dbPath string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("initializing schema: %w", err)
 	}
-	return &Store{db: db, KeepVersions: 25}, nil
+	// migrate databases created before pages carried a date
+	if _, err := db.Exec(`ALTER TABLE pages ADD COLUMN date TEXT NOT NULL DEFAULT ''`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column") {
+		db.Close()
+		return nil, fmt.Errorf("migrating pages.date: %w", err)
+	}
+	s := &Store{db: db, KeepVersions: 25}
+	if err := s.backfillDates(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("backfilling dates: %w", err)
+	}
+	return s, nil
 }
 
 // Close closes the database.
@@ -176,6 +193,89 @@ func CleanPath(p string) (string, bool) {
 	return cleaned, true
 }
 
+// DefaultExt gives a path a .gmi extension when its filename has none, so
+// "/about" becomes "/about.gmi". Special files (".header", ".theme") and
+// paths that already carry an extension are left alone. Without this it is
+// far too easy to create a page that stores as an unviewable binary blob.
+func DefaultExt(p string) string {
+	base := path.Base(p)
+	if strings.HasPrefix(base, ".") {
+		return p // .header / .footer / .theme
+	}
+	if strings.Contains(base, ".") {
+		return p // already has an extension
+	}
+	return p + ".gmi"
+}
+
+// TextMime coerces a mime type to a text one. The editors only ever produce
+// text, so a page must never be stored as an opaque binary because its path
+// had an unfamiliar extension.
+func TextMime(mime string) string {
+	if isBinaryMime(mime) {
+		return "text/plain; charset=utf-8"
+	}
+	return mime
+}
+
+var fmDateRe = regexp.MustCompile(`(?m)^date\s*[:=]\s*["\']?(\d{4}-\d{2}-\d{2})`)
+var nameDateRe = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})[-_]`)
+
+// PageDate resolves a page's publication date — what makes it a *post*
+// rather than a permanent page.
+//
+// Two sources, in order: an explicit "date:" in front matter, then a
+// YYYY-MM-DD filename prefix. Deliberately NOT the row's created timestamp:
+// every page has one of those, so it could not distinguish a post from a
+// page, and it would make backdating or importing impossible. A date is a
+// statement of intent, so it stays explicit.
+func PageDate(p string, content []byte) string {
+	if i := strings.Index(string(content), "\n---"); i >= 0 && strings.HasPrefix(string(content), "---") {
+		if m := fmDateRe.FindSubmatch(content[:i]); m != nil {
+			return string(m[1])
+		}
+	}
+	if m := nameDateRe.FindStringSubmatch(path.Base(p)); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// backfillDates fills the date column for rows written before it existed.
+func (s *Store) backfillDates() error {
+	rows, err := s.db.Query(`SELECT id, path, content FROM pages WHERE date = '' AND binary = 0`)
+	if err != nil {
+		return err
+	}
+	type row struct {
+		id   int64
+		date string
+	}
+	var todo []row
+	for rows.Next() {
+		var id int64
+		var p string
+		var content []byte
+		if err := rows.Scan(&id, &p, &content); err != nil {
+			rows.Close()
+			return err
+		}
+		if d := PageDate(p, content); d != "" {
+			todo = append(todo, row{id, d})
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, t := range todo {
+		if _, err := s.db.Exec(`UPDATE pages SET date = ? WHERE id = ?`, t.date, t.id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Hidden reports whether a path is a special file (final segment starts
 // with ".") that must never be served or listed directly.
 func Hidden(p string) bool {
@@ -206,9 +306,10 @@ func (s *Store) SavePage(p string, content []byte, mime string, author string) (
 		mime = MimeFor(cp)
 	}
 	binary := isBinaryMime(mime)
-	title := ""
+	title, date := "", ""
 	if !binary {
 		title = TitleOf(cp, content, mime)
+		date = PageDate(cp, content)
 	}
 	now := time.Now().Unix()
 
@@ -223,8 +324,8 @@ func (s *Store) SavePage(p string, content []byte, mime string, author string) (
 	err = tx.QueryRow(`SELECT id, created FROM pages WHERE path = ?`, cp).Scan(&id, &created)
 	switch {
 	case err == sql.ErrNoRows:
-		res, err := tx.Exec(`INSERT INTO pages (path, title, content, mime, binary, created, updated) VALUES (?,?,?,?,?,?,?)`,
-			cp, title, content, mime, boolInt(binary), now, now)
+		res, err := tx.Exec(`INSERT INTO pages (path, title, content, mime, binary, date, created, updated) VALUES (?,?,?,?,?,?,?,?)`,
+			cp, title, content, mime, boolInt(binary), date, now, now)
 		if err != nil {
 			return nil, err
 		}
@@ -238,8 +339,8 @@ func (s *Store) SavePage(p string, content []byte, mime string, author string) (
 			SELECT path, content, mime, ?, ? FROM pages WHERE id = ?`, author, now, id); err != nil {
 			return nil, err
 		}
-		if _, err := tx.Exec(`UPDATE pages SET title=?, content=?, mime=?, binary=?, updated=? WHERE id=?`,
-			title, content, mime, boolInt(binary), now, id); err != nil {
+		if _, err := tx.Exec(`UPDATE pages SET title=?, content=?, mime=?, binary=?, date=?, updated=? WHERE id=?`,
+			title, content, mime, boolInt(binary), date, now, id); err != nil {
 			return nil, err
 		}
 		if err := s.pruneVersions(tx, cp); err != nil {
@@ -264,7 +365,7 @@ func (s *Store) SavePage(p string, content []byte, mime string, author string) (
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	return &Page{ID: id, Path: cp, Title: title, Content: content, Mime: mime, Binary: binary,
+	return &Page{ID: id, Path: cp, Title: title, Date: date, Content: content, Mime: mime, Binary: binary,
 		Created: time.Unix(created, 0), Updated: time.Unix(now, 0)}, nil
 }
 
@@ -287,8 +388,8 @@ func (s *Store) GetPage(p string) (*Page, error) {
 	var pg Page
 	var bin int
 	var created, updated int64
-	err := s.db.QueryRow(`SELECT id, path, title, content, mime, binary, created, updated FROM pages WHERE path = ?`, cp).
-		Scan(&pg.ID, &pg.Path, &pg.Title, &pg.Content, &pg.Mime, &bin, &created, &updated)
+	err := s.db.QueryRow(`SELECT id, path, title, content, mime, binary, date, created, updated FROM pages WHERE path = ?`, cp).
+		Scan(&pg.ID, &pg.Path, &pg.Title, &pg.Content, &pg.Mime, &bin, &pg.Date, &created, &updated)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
@@ -355,7 +456,7 @@ func likeEscape(s string) string {
 }
 
 func (s *Store) listWhere(where string, args []any) ([]Meta, error) {
-	rows, err := s.db.Query(`SELECT path, title, mime, binary, length(content), updated FROM pages WHERE `+where+` ORDER BY path`, args...)
+	rows, err := s.db.Query(`SELECT path, title, mime, binary, date, length(content), updated FROM pages WHERE `+where+` ORDER BY path`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -365,7 +466,7 @@ func (s *Store) listWhere(where string, args []any) ([]Meta, error) {
 		var m Meta
 		var bin int
 		var updated int64
-		if err := rows.Scan(&m.Path, &m.Title, &m.Mime, &bin, &m.Size, &updated); err != nil {
+		if err := rows.Scan(&m.Path, &m.Title, &m.Mime, &bin, &m.Date, &m.Size, &updated); err != nil {
 			return nil, err
 		}
 		m.Binary = bin != 0
@@ -373,6 +474,66 @@ func (s *Store) listWhere(where string, args []any) ([]Meta, error) {
 		out = append(out, m)
 	}
 	return out, rows.Err()
+}
+
+// RenamePage moves a page to a new path, carrying its version history with
+// it. It fails if the destination already exists.
+func (s *Store) RenamePage(oldPath, newPath, author string) (*Page, error) {
+	op, ok := CleanPath(oldPath)
+	if !ok {
+		return nil, fmt.Errorf("invalid source path %q", oldPath)
+	}
+	np, ok := CleanPath(newPath)
+	if !ok {
+		return nil, fmt.Errorf("invalid destination path %q", newPath)
+	}
+	if op == np {
+		return s.GetPage(op)
+	}
+	if s.PageExists(np) {
+		return nil, fmt.Errorf("%s already exists", np)
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	var id int64
+	if err := tx.QueryRow(`SELECT id FROM pages WHERE path = ?`, op).Scan(&id); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	now := time.Now().Unix()
+	// snapshot under the OLD path so the move itself is undoable
+	if _, err := tx.Exec(`INSERT INTO versions (path, content, mime, author, saved_at)
+		SELECT path, content, mime, ?, ? FROM pages WHERE id = ?`,
+		author+" (renamed to "+np+")", now, id); err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(`UPDATE pages SET path = ?, updated = ? WHERE id = ?`, np, now, id); err != nil {
+		return nil, err
+	}
+	// history follows the page
+	if _, err := tx.Exec(`UPDATE versions SET path = ? WHERE path = ?`, np, op); err != nil {
+		return nil, err
+	}
+	// stats follow it too
+	if _, err := tx.Exec(`UPDATE OR IGNORE hits SET path = ? WHERE path = ?`,
+		strings.TrimSuffix(np, ".gmi"), strings.TrimSuffix(op, ".gmi")); err != nil {
+		return nil, err
+	}
+	// keep the search index pointing at the right path
+	if _, err := tx.Exec(`UPDATE pages_fts SET path = ? WHERE rowid = ?`, np, id); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return s.GetPage(np)
 }
 
 // ---- versions -----------------------------------------------------------

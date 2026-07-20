@@ -271,3 +271,92 @@ func TestMimeFor(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultExtAndTextMime(t *testing.T) {
+	cases := map[string]string{
+		"/about":            "/about.gmi",
+		"/posts/2026-01-01-hi": "/posts/2026-01-01-hi.gmi",
+		"/about.gmi":        "/about.gmi",
+		"/media/cat.png":    "/media/cat.png",
+		"/posts/.header":    "/posts/.header",
+		"/.theme":           "/.theme",
+	}
+	for in, want := range cases {
+		if got := DefaultExt(in); got != want {
+			t.Errorf("DefaultExt(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if TextMime("application/octet-stream") != "text/plain; charset=utf-8" {
+		t.Error("binary mime not coerced to text")
+	}
+	if TextMime("text/gemini; charset=utf-8") != "text/gemini; charset=utf-8" {
+		t.Error("text mime should pass through")
+	}
+}
+
+func TestPageDate(t *testing.T) {
+	if d := PageDate("/posts/2026-07-20-hi.gmi", []byte("# Hi")); d != "2026-07-20" {
+		t.Errorf("filename date = %q", d)
+	}
+	fm := []byte("---\ntitle: X\ndate: 2026-07-21\n---\n# X")
+	if d := PageDate("/posts/2026-07-20-hi.gmi", fm); d != "2026-07-21" {
+		t.Errorf("front matter should win: %q", d)
+	}
+	if d := PageDate("/posts/clean.gmi", fm); d != "2026-07-21" {
+		t.Errorf("front matter alone = %q", d)
+	}
+	if d := PageDate("/about.gmi", []byte("# About")); d != "" {
+		t.Errorf("undated page = %q", d)
+	}
+	// a "date:" in the body, not front matter, must not count
+	if d := PageDate("/about.gmi", []byte("# About\n\ndate: 2026-07-20")); d != "" {
+		t.Errorf("body text treated as front matter: %q", d)
+	}
+}
+
+func TestRenameCarriesHistory(t *testing.T) {
+	st := openTest(t)
+	if _, err := st.SavePage("/old.gmi", []byte("# v1"), "", "t"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SavePage("/old.gmi", []byte("# v2"), "", "t"); err != nil {
+		t.Fatal(err)
+	}
+	st.Bump("/old", "http")
+	before, _ := st.ListVersions("/old.gmi")
+	if len(before) != 1 {
+		t.Fatalf("setup: %d versions", len(before))
+	}
+
+	pg, err := st.RenamePage("/old.gmi", "/new.gmi", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pg.Path != "/new.gmi" || string(pg.Content) != "# v2" {
+		t.Fatalf("renamed page = %+v", pg)
+	}
+	if _, err := st.GetPage("/old.gmi"); err != ErrNotFound {
+		t.Error("old path still present")
+	}
+	// history moved with it (plus a snapshot of the move itself)
+	after, _ := st.ListVersions("/new.gmi")
+	if len(after) != 2 {
+		t.Errorf("history did not follow the rename: %d versions", len(after))
+	}
+	if old, _ := st.ListVersions("/old.gmi"); len(old) != 0 {
+		t.Errorf("history left behind at the old path: %d", len(old))
+	}
+	// view counts follow too
+	if n := st.Count("/new"); n != 1 {
+		t.Errorf("stats did not follow rename: %d", n)
+	}
+	// searchable under the new path
+	if hits, _ := st.Search("v2", 10); len(hits) != 1 || hits[0].Path != "/new.gmi" {
+		t.Errorf("search index stale after rename: %+v", hits)
+	}
+	// refuses to clobber
+	_, _ = st.SavePage("/taken.gmi", []byte("# taken"), "", "t")
+	if _, err := st.RenamePage("/new.gmi", "/taken.gmi", "t"); err == nil {
+		t.Error("rename clobbered an existing page")
+	}
+}

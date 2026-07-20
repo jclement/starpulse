@@ -61,7 +61,7 @@ var mcpTools = []mcpTool{
 	{"read_page", "Read a page's raw source (gemtext for pages, base64 for binary files).", schema([]string{"path"}, obj(
 		"path", obj("type", "string", "description", "Storage path, e.g. /index.gmi or /posts/.header")))},
 	{"write_page", "Create or update a page with gemtext (or CSS for .theme files). Previous content is kept as a restorable version.", schema([]string{"path", "content"}, obj(
-		"path", obj("type", "string", "description", "Storage path, e.g. /about.gmi, /posts/2026-07-19-hi.gmi, /.theme"),
+		"path", obj("type", "string", "description", "Storage path, e.g. /about.gmi, /posts/2026-07-19-hi.gmi, /.theme. A path with no extension gets .gmi."),
 		"content", obj("type", "string"),
 		"mime", obj("type", "string", "description", "Optional mime type; inferred from the extension when omitted")))},
 	{"upload_file", "Upload a binary file (image etc.) from base64 content.", schema([]string{"path", "content_base64"}, obj(
@@ -213,7 +213,11 @@ func (s *Server) mcpToolCall(params json.RawMessage) map[string]any {
 		return toolText(string(pg.Content))
 
 	case "write_page":
-		pg, err := s.Store.SavePage(a.Path, []byte(a.Content), a.Mime, "mcp")
+		target := a.Path
+		if !s.Store.PageExists(target) {
+			target = store.DefaultExt(target)
+		}
+		pg, err := s.Store.SavePage(target, []byte(a.Content), a.Mime, "mcp")
 		if err != nil {
 			return toolErr(err.Error())
 		}

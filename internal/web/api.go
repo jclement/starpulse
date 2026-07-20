@@ -110,10 +110,17 @@ func (s *Server) apiPages(w http.ResponseWriter, r *http.Request) {
 // apiPage handles GET/PUT/DELETE /api/pages/<path>.
 func (s *Server) apiPage(w http.ResponseWriter, r *http.Request) {
 	p := strings.TrimPrefix(r.URL.Path, "/api/pages")
-	cp, ok := store.CleanPath(p)
+	// GET/DELETE address an existing page exactly; writes get .gmi by default
+	raw, ok := store.CleanPath(p)
 	if !ok {
 		jsonErr(w, http.StatusBadRequest, "invalid path")
 		return
+	}
+	cp := raw
+	if r.Method == http.MethodPut || r.Method == http.MethodPost {
+		if !s.Store.PageExists(raw) {
+			cp, _ = store.CleanPath(store.DefaultExt(raw))
+		}
 	}
 	switch r.Method {
 	case http.MethodGet:
