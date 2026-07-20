@@ -399,11 +399,11 @@ tr.page-row td:first-child { padding-left: 1.4em; }
 .hl { background: var(--sel); border-radius: 2px; }
 
 /* admin tables need more room than the prose reading column */
-main:has(table.admin) { max-width: 76rem; }
+main:has(table.admin) { max-width: 64rem; }
 /* keep tabular columns on one line — dates and actions must not wrap */
+table.admin td:nth-child(2),
 table.admin td:nth-child(3),
 table.admin td:nth-child(4),
-table.admin td:nth-child(5),
-table.admin th:nth-child(3),
-table.admin th:nth-child(4) { white-space: nowrap; }
+table.admin th:nth-child(2),
+table.admin th:nth-child(3) { white-space: nowrap; }
 table.admin td:first-child { word-break: break-word; }

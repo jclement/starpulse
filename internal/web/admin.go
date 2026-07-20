@@ -69,7 +69,7 @@ func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Fprintf(&b, `<input type="search" id="page-filter" class="filter" placeholder="filter %d pages by path or title…" autocomplete="off" autofocus>`+"\n", len(metas))
 	b.WriteString(`<p id="filter-count" class="dim" hidden></p>` + "\n")
-	b.WriteString(`<table class="admin" id="pages-table"><thead><tr><th>path</th><th>title</th><th class="right">size</th><th>updated</th><th></th></tr></thead>` + "\n")
+	b.WriteString(`<table class="admin" id="pages-table"><thead><tr><th>path</th><th class="right">size</th><th>updated</th><th></th></tr></thead>` + "\n")
 
 	// bucket by folder first — a flat path sort interleaves subfolder pages
 	// with root pages (/posts/… sorts between /now.gmi and /projects.gmi),
@@ -96,7 +96,7 @@ func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
 		if label == "/" {
 			label = "/ (root)"
 		}
-		fmt.Fprintf(&b, `<tbody class="folder-group" data-folder="%s"><tr class="folder-row"><td colspan="5">%s <span class="dim">%d</span></td></tr>`+"\n",
+		fmt.Fprintf(&b, `<tbody class="folder-group" data-folder="%s"><tr class="folder-row"><td colspan="4">%s <span class="dim">%d</span></td></tr>`+"\n",
 			html.EscapeString(strings.ToLower(folder)), html.EscapeString(label), len(rows))
 		for _, m := range rows {
 			title := m.Title
@@ -108,9 +108,9 @@ func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
 			}
 			// show just the file name in the folder view; full path on hover
 			name := m.Path[len(folder):]
-			fmt.Fprintf(&b, `<tr class="page-row" data-key="%s"><td><a href="/admin/edit?path=%s" title="%s">%s</a></td><td>%s</td><td class="right dim">%s</td><td class="dim">%s</td><td class="dim">%s<a href="/admin/versions?path=%s">history</a></td></tr>`+"\n",
+			fmt.Fprintf(&b, `<tr class="page-row" data-key="%s"><td><a href="/admin/edit?path=%s" title="%s">%s</a></td><td class="right dim">%s</td><td class="dim">%s</td><td class="dim">%s<a href="/admin/versions?path=%s">history</a></td></tr>`+"\n",
 				html.EscapeString(strings.ToLower(m.Path+" "+title)),
-				url.QueryEscape(m.Path), html.EscapeString(m.Path), html.EscapeString(name), html.EscapeString(title),
+				url.QueryEscape(m.Path), html.EscapeString(titleHint(m.Path, title)), html.EscapeString(name),
 				sizeStr(m.Size), m.Updated.In(s.loc()).Format("2006-01-02 15:04"), view, url.QueryEscape(m.Path))
 		}
 		b.WriteString("</tbody>\n")
@@ -118,6 +118,15 @@ func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
 	b.WriteString("</table>\n")
 	b.WriteString(`<p class="dim">Special files: <code>.header</code> and <code>.footer</code> (gemtext, inherited down folders), <code>.theme</code> (CSS, inherited down folders). Create them like any page, e.g. <code>/posts/.header</code>.</p>`)
 	s.adminRender(w, r, "pages", b.String())
+}
+
+// titleHint is the hover tooltip for a row: the full path, plus the page
+// title when there is one (the title column is not displayed).
+func titleHint(path, title string) string {
+	if title == "" {
+		return path
+	}
+	return path + " — " + title
 }
 
 // pageFolder returns the containing folder of a storage path ("/foo/bar.gmi"
