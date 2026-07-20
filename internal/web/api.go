@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jclement/starpulse/internal/auth"
 	"github.com/jclement/starpulse/internal/render"
@@ -18,12 +19,23 @@ import (
 // matching the admin password, or a valid admin session cookie (lets the
 // admin UI's JS call the same endpoints).
 func (s *Server) apiAuthed(r *http.Request) bool {
-	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
-		if s.Cfg.AdminPassword != "" && auth.CheckPassword(s.Cfg.AdminPassword, strings.TrimPrefix(h, "Bearer ")) {
-			return true
-		}
+	if s.loggedIn(r) {
+		return true
 	}
-	return s.loggedIn(r)
+	h := r.Header.Get("Authorization")
+	if !strings.HasPrefix(h, "Bearer ") {
+		return false
+	}
+	ip := clientIP(r)
+	if s.authGate().blocked(ip, time.Now()) {
+		return false
+	}
+	if s.Cfg.AdminPassword != "" && auth.CheckPassword(s.Cfg.AdminPassword, strings.TrimPrefix(h, "Bearer ")) {
+		s.authGate().succeed(ip)
+		return true
+	}
+	s.authGate().fail(ip, time.Now())
+	return false
 }
 
 func jsonOut(w http.ResponseWriter, status int, v any) {

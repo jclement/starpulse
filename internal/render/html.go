@@ -56,9 +56,12 @@ func GemtextToHTML(src string) string {
 			fmt.Fprintf(&b, "<blockquote>%s</blockquote>\n", html.EscapeString(l.Text))
 		case gemtext.Link:
 			url := webURL(l.URL)
+			// escape for HTML attribute context — %q is a Go-string quote,
+			// not an HTML escape, so it would let a "> in a URL break out.
+			esc := html.EscapeString(url)
 			if isImage(url) {
-				fmt.Fprintf(&b, "<p class=\"img\"><a href=%q><img src=%q alt=%q loading=\"lazy\"></a></p>\n",
-					url, url, html.EscapeString(l.Text))
+				fmt.Fprintf(&b, "<p class=\"img\"><a href=\"%s\"><img src=\"%s\" alt=\"%s\" loading=\"lazy\"></a></p>\n",
+					esc, esc, html.EscapeString(l.Text))
 			} else {
 				cls := ""
 				if strings.HasPrefix(url, "gemini://") {
@@ -66,7 +69,7 @@ func GemtextToHTML(src string) string {
 				} else if strings.Contains(url, "://") {
 					cls = ` class="ext"`
 				}
-				fmt.Fprintf(&b, "<p class=\"lnk\"><a%s href=%q>%s</a></p>\n", cls, url, html.EscapeString(l.Text))
+				fmt.Fprintf(&b, "<p class=\"lnk\"><a%s href=\"%s\">%s</a></p>\n", cls, esc, html.EscapeString(l.Text))
 			}
 		default:
 			if strings.TrimSpace(l.Text) == "" {

@@ -38,6 +38,22 @@ Some <script>alert(1)</script> text
 	}
 }
 
+func TestLinkURLAttributeInjection(t *testing.T) {
+	// a hostile URL must not break out of the href attribute
+	h := GemtextToHTML(`=> https://x/"><script>alert(1)</script> click`)
+	if strings.Contains(h, "<script>") {
+		t.Errorf("URL broke out of attribute:\n%s", h)
+	}
+	if !strings.Contains(h, "&#34;") && !strings.Contains(h, "&quot;") {
+		t.Errorf("quote not entity-escaped in href:\n%s", h)
+	}
+	// image URLs too
+	h = GemtextToHTML(`=> /x.png"><script>alert(1)</script> pic`)
+	if strings.Contains(h, "<script>") {
+		t.Errorf("image URL broke out:\n%s", h)
+	}
+}
+
 func TestUnclosedPre(t *testing.T) {
 	h := GemtextToHTML("```\nline")
 	if !strings.HasSuffix(strings.TrimSpace(h), "</pre>") {

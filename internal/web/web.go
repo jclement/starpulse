@@ -72,9 +72,18 @@ type Server struct {
 	Loc *time.Location
 	// Onion returns the hidden-service hostname ("" when tor is off).
 	Onion func() string
+
+	throttle *authThrottle
 }
 
 const sessionCookie = "starpulse_session"
+
+func (s *Server) authGate() *authThrottle {
+	if s.throttle == nil {
+		s.throttle = newAuthThrottle()
+	}
+	return s.throttle
+}
 
 func (s *Server) loc() *time.Location {
 	if s.Loc != nil {
@@ -212,7 +221,16 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	case site.RedirectResult:
 		http.Redirect(w, r, res.Location, http.StatusMovedPermanently)
 	case site.FileResult:
-		w.Header().Set("Content-Type", res.File.Mime)
+		mime := res.File.Mime
+		// uploaded files could carry active content (html, svg with script).
+		// they render on the site origin, so neutralize active types:
+		// relabel as text/plain and force download rather than inline exec.
+		if isActiveMime(mime) {
+			mime = "text/plain; charset=utf-8"
+			w.Header().Set("Content-Disposition", "attachment")
+		}
+		w.Header().Set("Content-Type", mime)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "public, max-age=3600")
 		http.ServeContent(w, r, "", res.File.Updated, strings.NewReader(string(res.File.Content)))
 	case site.PageResult:
@@ -342,7 +360,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodPost {
+		ip := clientIP(r)
+		if s.authGate().blocked(ip, time.Now()) {
+			s.Log.Warn("login throttled", "remote", ip)
+			s.renderLogin(w, r, "Too many attempts — try again later.")
+			return
+		}
 		if auth.CheckPassword(s.Cfg.AdminPassword, r.FormValue("password")) {
+			s.authGate().succeed(ip)
 			http.SetCookie(w, &http.Cookie{
 				Name:     sessionCookie,
 				Value:    s.Sessions.Token(30 * 24 * time.Hour),
@@ -355,7 +380,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/admin", http.StatusSeeOther)
 			return
 		}
-		s.Log.Warn("failed login", "remote", r.RemoteAddr)
+		if s.authGate().fail(ip, time.Now()) {
+			s.Log.Warn("login lockout", "remote", ip)
+		} else {
+			s.Log.Warn("failed login", "remote", ip)
+		}
 		time.Sleep(time.Second) // soften brute force
 		s.renderLogin(w, r, "Wrong password.")
 		return

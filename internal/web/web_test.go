@@ -104,6 +104,47 @@ func TestPageServing(t *testing.T) {
 	}
 }
 
+func TestUploadedActiveContentNeutralized(t *testing.T) {
+	_, st, ts := testServer(t)
+	// an admin-uploaded html file must not be served as active html
+	_, _ = st.SavePage("/evil.html", []byte("<script>alert(1)</script>"), "text/html", "t")
+	_, _ = st.SavePage("/pic.svg", []byte("<svg onload=alert(1)></svg>"), "image/svg+xml", "t")
+	_, _ = st.SavePage("/ok.png", []byte("\x89PNG"), "image/png", "t")
+
+	resp, err := http.Get(ts.URL + "/evil.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	ct := resp.Header.Get("Content-Type")
+	if strings.HasPrefix(ct, "text/html") {
+		t.Errorf("html served with active content-type %q", ct)
+	}
+	if resp.Header.Get("Content-Disposition") == "" {
+		t.Error("html not forced to download")
+	}
+	if resp.Header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Error("missing nosniff")
+	}
+
+	// svg likewise
+	resp2, _ := http.Get(ts.URL + "/pic.svg")
+	if strings.HasPrefix(resp2.Header.Get("Content-Type"), "image/svg") {
+		t.Error("svg served as active image/svg")
+	}
+	resp2.Body.Close()
+
+	// real images still served inline with their type
+	resp3, _ := http.Get(ts.URL + "/ok.png")
+	if resp3.Header.Get("Content-Type") != "image/png" {
+		t.Errorf("png type changed: %q", resp3.Header.Get("Content-Type"))
+	}
+	if resp3.Header.Get("Content-Disposition") != "" {
+		t.Error("png forced to download")
+	}
+	resp3.Body.Close()
+}
+
 func TestSearchPage(t *testing.T) {
 	_, st, ts := testServer(t)
 	_, _ = st.SavePage("/x.gmi", []byte("# Xylophones\n\nmusic and mallets"), "", "t")
@@ -348,6 +389,51 @@ func TestAPIAuthAndCRUD(t *testing.T) {
 	srvCfgTest := strings.Repeat("x", 11<<20)
 	if code, _ := do("PUT", "/api/pages/big.gmi", srvCfgTest, "text/gemini"); code != 413 {
 		t.Errorf("oversize accepted: %d", code)
+	}
+}
+
+func TestLoginBruteForceLockout(t *testing.T) {
+	srv, st, ts := testServer(t)
+	_, _ = st.SavePage("/index.gmi", []byte("# Home"), "", "t")
+	srv.authGate().max = 3
+	// exhaust the allowance with wrong passwords
+	for i := 0; i < 3; i++ {
+		resp, _ := http.PostForm(ts.URL+"/login", url.Values{"password": {"wrong"}})
+		resp.Body.Close()
+	}
+	// now even the CORRECT password is refused while locked
+	resp, err := http.PostForm(ts.URL+"/login", url.Values{"password": {testPassword}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if strings.Contains(string(b), "Too many attempts") == false && resp.StatusCode == http.StatusSeeOther {
+		t.Error("correct password accepted despite lockout")
+	}
+}
+
+func TestBearerBruteForceLockout(t *testing.T) {
+	srv, st, ts := testServer(t)
+	_, _ = st.SavePage("/index.gmi", []byte("# Home"), "", "t")
+	srv.authGate().max = 3
+	bad := func() int {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/pages", nil)
+		req.Header.Set("Authorization", "Bearer nope")
+		resp, _ := http.DefaultClient.Do(req)
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	for i := 0; i < 3; i++ {
+		bad()
+	}
+	// correct bearer now rejected while locked out
+	req, _ := http.NewRequest("GET", ts.URL+"/api/pages", nil)
+	req.Header.Set("Authorization", "Bearer "+testPassword)
+	resp, _ := http.DefaultClient.Do(req)
+	resp.Body.Close()
+	if resp.StatusCode == 200 {
+		t.Error("correct bearer accepted despite lockout")
 	}
 }
 
