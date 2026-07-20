@@ -103,23 +103,23 @@ func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
 		marked, isLog := logFolders[folder]
 		actions := ""
 		if isLog {
-			actions += fmt.Sprintf(` <a class="newpost" href="/admin/edit?new=1&amp;path=%s">+ new post</a>`,
+			actions += fmt.Sprintf(` <span class="dim">·</span> <a class="newpost" href="/admin/edit?new=1&amp;path=%s">new post</a>`,
 				url.QueryEscape(folder))
 		}
 		// every non-root folder can publish (or stop publishing) a feed
 		if folder != "/" {
-			verb, state := "enable", "off"
+			label := "enable feed"
 			if marked {
-				verb, state = "disable", "on"
+				label = "disable feed"
 			}
 			actions += fmt.Sprintf(
-				` <form class="inline feedtoggle" method="post" action="/admin/feed">`+
+				` <span class="dim">·</span> <form class="inline feedtoggle" method="post" action="/admin/feed">`+
 					`<input type="hidden" name="folder" value="%s">`+
 					`<input type="hidden" name="enable" value="%t">`+
-					`<button class="linkish" type="submit" title="%s the Atom feed for this folder">feed: %s</button></form>`,
-				html.EscapeString(folder), !marked, verb, state)
+					`<button class="linkish" type="submit" title="Atom feed for this folder">%s</button></form>`,
+				html.EscapeString(folder), !marked, label)
 			if isLog && !marked {
-				actions += ` <span class="dim">(auto — dated posts)</span>`
+				actions += ` <span class="dim">· feed on (dated posts)</span>`
 			}
 		}
 		fmt.Fprintf(&b, `<tbody class="folder-group" data-folder="%s"><tr class="folder-row"><td colspan="4">%s <span class="dim">%d</span>%s</td></tr>`+"\n",

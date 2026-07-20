@@ -135,6 +135,26 @@ undo is always one click away. Per-page **stats** are broken down by door:
 `http`, `gemini`, `http+tor`, `gemini+tor`. Full-text **search** (SQLite FTS5)
 is at `/search` on both protocols.
 
+## Syntax highlighting
+
+Fenced code blocks are highlighted **server side** — the public site stays
+JavaScript-free. The language comes from the fence's alt text, so a block
+opened with `go`, `python`, `sh`, `elixir`, `csharp` (297 lexers, via
+[chroma](https://github.com/alecthomas/chroma)) is coloured; a fence with no
+alt text, or a decorative one (`banner`, `table`), is left alone.
+
+```yaml
+highlight:
+  enabled: true
+  style: github            # any chroma style name
+  dark_style: github-dark  # used under prefers-color-scheme: dark
+```
+
+The **admin editor** highlights as you type too — gemtext (headings, links,
+lists, quotes, fences and `{{directives}}`), CSS in a `.theme`, and the
+`key: value` special files. That is a transparent textarea over a coloured
+layer, hand-rolled in the existing `admin.js`; no editor library is pulled in.
+
 ## Feeds
 
 Two conventions, both supported:

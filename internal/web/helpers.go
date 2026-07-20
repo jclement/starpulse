@@ -10,8 +10,8 @@ import (
 )
 
 // gemtextBody renders assembled gemtext to an HTML fragment.
-func gemtextBody(gmi string) string {
-	return render.GemtextToHTML(gmi)
+func (s *Server) gemtextBody(gmi string) string {
+	return render.GemtextToHTMLOpts(gmi, s.renderOpts())
 }
 
 // isActiveMime reports whether a stored file's mime type can execute script

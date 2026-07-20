@@ -9,11 +9,23 @@ import (
 	"github.com/jclement/starpulse/internal/gemtext"
 )
 
+// Options tunes rendering. The zero value renders plain HTML.
+type Options struct {
+	// Highlight renders a fenced block for a given language, returning
+	// false when it cannot (unknown language, decorative block).
+	Highlight func(lang, code string) (string, bool)
+}
+
 // GemtextToHTML renders gemtext to an HTML fragment mirroring its structure.
-func GemtextToHTML(src string) string {
+func GemtextToHTML(src string) string { return GemtextToHTMLOpts(src, Options{}) }
+
+// GemtextToHTMLOpts renders gemtext with options.
+func GemtextToHTMLOpts(src string, opt Options) string {
 	var b strings.Builder
 	lines := gemtext.Parse(src)
 	inPre, inList := false, false
+	var preLines []string
+	var preAlt string
 	closeList := func() {
 		if inList {
 			b.WriteString("</ul>\n")
@@ -28,18 +40,14 @@ func GemtextToHTML(src string) string {
 		case gemtext.PreToggle:
 			closeList()
 			if inPre {
-				b.WriteString("</pre>\n")
+				b.WriteString(renderPre(preAlt, preLines, opt))
+				preLines, preAlt = nil, ""
 			} else {
-				if l.Meta != "" {
-					fmt.Fprintf(&b, "<pre title=%q aria-label=%q>", l.Meta, l.Meta)
-				} else {
-					b.WriteString("<pre>")
-				}
+				preAlt = l.Meta
 			}
 			inPre = !inPre
 		case gemtext.PreText:
-			b.WriteString(html.EscapeString(l.Text))
-			b.WriteString("\n")
+			preLines = append(preLines, l.Text)
 		case gemtext.Heading1:
 			fmt.Fprintf(&b, "<h1>%s</h1>\n", html.EscapeString(l.Text))
 		case gemtext.Heading2:
@@ -79,9 +87,31 @@ func GemtextToHTML(src string) string {
 		}
 	}
 	if inPre {
-		b.WriteString("</pre>\n")
+		b.WriteString(renderPre(preAlt, preLines, opt))
 	}
 	closeList()
+	return b.String()
+}
+
+// renderPre emits one preformatted block, highlighted when possible.
+func renderPre(alt string, lines []string, opt Options) string {
+	code := strings.Join(lines, "\n")
+	if len(lines) > 0 {
+		code += "\n"
+	}
+	if opt.Highlight != nil && alt != "" {
+		if out, ok := opt.Highlight(alt, code); ok {
+			return fmt.Sprintf("<div class=\"hl\" data-lang=%q>%s</div>\n", alt, out)
+		}
+	}
+	var b strings.Builder
+	if alt != "" {
+		fmt.Fprintf(&b, "<pre title=%q aria-label=%q>", alt, alt)
+	} else {
+		b.WriteString("<pre>")
+	}
+	b.WriteString(html.EscapeString(code))
+	b.WriteString("</pre>\n")
 	return b.String()
 }
 

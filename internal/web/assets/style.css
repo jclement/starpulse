@@ -415,7 +415,7 @@ table.admin td:first-child { word-break: break-word; }
 
 /* a button that reads as a link (inline row actions).
    needs to out-specify `form.inline button`, which paints solid. */
-form.del button.linkish, button.linkish {
+form.del button.linkish, form.feedtoggle button.linkish, button.linkish {
   background: none;
   border: none;
   padding: 0;
@@ -425,5 +425,95 @@ form.del button.linkish, button.linkish {
   text-decoration: none;
 }
 form.del button.linkish:hover, button.linkish:hover { text-decoration: underline; text-underline-offset: 3px; color: #b3402a; }
+/* folder row actions read as quiet text, not controls (must out-specify
+   the generic .linkish rule above, which paints them accent-coloured) */
+tr.folder-row form.feedtoggle button.linkish,
+tr.folder-row a.newpost {
+  font-weight: 400;
+  font-size: 0.85em;
+  color: var(--dim);
+  text-decoration: none;
+}
+tr.folder-row form.feedtoggle button.linkish:hover,
+tr.folder-row a.newpost:hover { color: var(--accent); text-decoration: underline; }
 
 a.newpost { font-weight: 400; font-size: 0.9em; margin-left: 0.6em; }
+
+/* highlighted code blocks: same chrome as <pre>, colours from highlight.css */
+.hl {
+  background: var(--pre-bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.9em 1.1em;
+  overflow-x: auto;
+  line-height: 1.45;
+  font-size: 0.88em;
+  margin: 1em 0;
+  position: relative;
+}
+.hl pre { background: none; border: none; padding: 0; margin: 0; overflow: visible; font-size: 1em; }
+.hl::after {
+  content: attr(data-lang);
+  position: absolute;
+  top: 0.3em;
+  right: 0.6em;
+  font-size: 0.75em;
+  color: var(--dim);
+  opacity: 0.7;
+}
+
+/* ---- editor highlighting overlay ----
+   the textarea keeps the caret and selection but paints no glyphs; the
+   <pre> underneath shows the coloured copy in exactly the same metrics. */
+.ed-main.ed-highlighted { position: relative; }
+.ed-main.ed-highlighted textarea,
+.ed-main .ed-hl {
+  font: inherit;
+  font-size: 0.95em;
+  line-height: 1.6;
+  padding: 1.2em 1.4em 40vh;
+  white-space: pre;
+  overflow-wrap: normal;
+  tab-size: 4;
+  border: none;
+  margin: 0;
+}
+.ed-main .ed-hl {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  background: var(--bg);
+  color: var(--fg);
+  border-radius: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+.ed-main .ed-hl code { font: inherit; background: none; padding: 0; }
+.ed-main.ed-highlighted textarea {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--accent);
+}
+.ed-main.ed-highlighted textarea::selection { background: var(--sel); color: transparent; }
+
+/* gemtext tokens */
+.g-h1 { color: var(--accent); font-weight: 600; }
+.g-h2 { color: var(--accent); }
+.g-h3 { color: var(--accent); opacity: 0.85; }
+.g-arrow, .g-list, .g-fence { color: var(--dim); }
+.g-url { color: var(--accent-2); }
+.g-label { color: var(--fg); }
+.g-quote { color: var(--dim); font-style: italic; }
+.g-pre { color: var(--accent-2); opacity: 0.9; }
+.g-dir { color: #9a5bb8; background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 3px; }
+.g-fm { color: var(--dim); }
+/* css / key-value tokens */
+.c-comment { color: var(--dim); font-style: italic; }
+.c-sel { color: var(--accent); }
+.c-var { color: var(--accent-2); }
+
+@media (prefers-color-scheme: dark) {
+  .g-dir { color: #c792ea; }
+}

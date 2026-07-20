@@ -67,6 +67,15 @@ type Feeds struct {
 	List []Feed `yaml:"list"`
 }
 
+// Highlight configures server-side syntax highlighting of fenced code
+// blocks on the web rendering. Gemini always gets the plain text.
+type Highlight struct {
+	Enabled bool `yaml:"enabled"`
+	// Style / DarkStyle are chroma palette names.
+	Style     string `yaml:"style"`
+	DarkStyle string `yaml:"dark_style"`
+}
+
 // Titan configures titan:// uploads over the gemini listener.
 type Titan struct {
 	Enabled bool `yaml:"enabled"`
@@ -107,6 +116,9 @@ type Config struct {
 	// Feeds are the Atom feeds published by this site.
 	Feeds Feeds `yaml:"feeds"`
 
+	// Highlight controls syntax highlighting of code blocks.
+	Highlight Highlight `yaml:"highlight"`
+
 	// Timezone is an IANA zone name (e.g. "America/Edmonton") used when
 	// rendering timestamps (now-posts, {{updated}}, admin displays).
 	// Empty = the server's local time.
@@ -134,7 +146,8 @@ func Default() *Config {
 		Titan:    Titan{Enabled: false},
 		Tor:      Tor{Enabled: false, Binary: "tor"},
 
-		Feeds: Feeds{Auto: true, Limit: 30},
+		Feeds:     Feeds{Auto: true, Limit: 30},
+		Highlight: Highlight{Enabled: true, Style: "github", DarkStyle: "github-dark"},
 
 		MaxUploadBytes: 10 << 20,
 		KeepVersions:   25,
@@ -396,6 +409,14 @@ feeds:
       source: now              # the now-post stream
       page: /now               # where a human can read them
       title: "My now posts"
+
+# Syntax highlighting for fenced code blocks on the web. The language comes
+# from the text after the opening fence (go, python, sh, ...). Palettes are
+# chroma style names.
+highlight:
+  enabled: true
+  style: github
+  dark_style: github-dark
 
 # IANA timezone for displayed timestamps (now-posts, {{updated}}, admin).
 # Empty = server local time.

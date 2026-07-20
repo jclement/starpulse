@@ -60,3 +60,44 @@ func TestUnclosedPre(t *testing.T) {
 		t.Errorf("unclosed pre not terminated:\n%s", h)
 	}
 }
+
+func TestFencedBlockHighlighting(t *testing.T) {
+	called := ""
+	opts := Options{Highlight: func(lang, code string) (string, bool) {
+		called = lang
+		if lang == "go" {
+			return "<pre class=\"chroma\">HIGHLIGHTED</pre>", true
+		}
+		return "", false
+	}}
+
+	// a fence with a known language is handed to the highlighter whole
+	out := GemtextToHTMLOpts("```go\nfunc main() {}\nx := 1\n```", opts)
+	if called != "go" {
+		t.Errorf("highlighter got language %q", called)
+	}
+	if !strings.Contains(out, "HIGHLIGHTED") || !strings.Contains(out, `data-lang="go"`) {
+		t.Errorf("highlighted block not emitted:\n%s", out)
+	}
+
+	// an unknown language falls back to plain, escaped <pre>
+	out = GemtextToHTMLOpts("```nope\n<script>x</script>\n```", opts)
+	if strings.Contains(out, "HIGHLIGHTED") {
+		t.Error("unknown language should not be highlighted")
+	}
+	if !strings.Contains(out, "&lt;script&gt;") {
+		t.Errorf("fallback must still escape:\n%s", out)
+	}
+
+	// no alt text: never highlighted, content preserved verbatim
+	out = GemtextToHTMLOpts("```\n  indented  \n```", opts)
+	if !strings.Contains(out, "  indented  ") {
+		t.Errorf("plain block mangled:\n%s", out)
+	}
+
+	// and with no highlighter at all the old behaviour is unchanged
+	plain := GemtextToHTML("```go\nfunc main() {}\n```")
+	if !strings.Contains(plain, "<pre") || strings.Contains(plain, "data-lang") {
+		t.Errorf("default rendering changed:\n%s", plain)
+	}
+}

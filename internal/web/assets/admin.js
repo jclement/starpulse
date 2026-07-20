@@ -194,3 +194,102 @@
     });
   });
 })();
+
+// ---- editor syntax highlighting -------------------------------------
+// A transparent textarea sitting over a highlighted <pre>. No dependencies:
+// gemtext is line-oriented, so a per-line pass is all it takes; CSS and the
+// key:value special files get a light touch too.
+(function () {
+  var ta = document.getElementById("content");
+  var path = document.getElementById("path");
+  if (!ta || !window.getComputedStyle) return;
+
+  var main = ta.parentNode;
+  var layer = document.createElement("pre");
+  layer.className = "ed-hl";
+  layer.setAttribute("aria-hidden", "true");
+  var code = document.createElement("code");
+  layer.appendChild(code);
+  main.insertBefore(layer, ta);
+  main.classList.add("ed-highlighted");
+
+  function esc(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function span(cls, s) { return '<span class="' + cls + '">' + esc(s) + "</span>"; }
+
+  // {{directives}} are highlighted inside ordinary text
+  function withDirectives(s) {
+    var out = "", last = 0, re = /\{\{[^}]*\}\}/g, m;
+    while ((m = re.exec(s))) {
+      out += esc(s.slice(last, m.index)) + span("g-dir", m[0]);
+      last = m.index + m[0].length;
+    }
+    return out + esc(s.slice(last));
+  }
+
+  function gemtext(src) {
+    var out = [], pre = false;
+    src.split("\n").forEach(function (line) {
+      if (line.indexOf("```") === 0) {
+        pre = !pre;
+        out.push(span("g-fence", line));
+        return;
+      }
+      if (pre) { out.push(span("g-pre", line)); return; }
+      if (/^###/.test(line)) { out.push(span("g-h3", line)); return; }
+      if (/^##/.test(line))  { out.push(span("g-h2", line)); return; }
+      if (/^#/.test(line))   { out.push(span("g-h1", line)); return; }
+      if (/^=>/.test(line)) {
+        var m = line.match(/^(=>\s*)(\S+)(\s*)([\s\S]*)$/);
+        out.push(m
+          ? span("g-arrow", m[1]) + span("g-url", m[2]) + esc(m[3]) + span("g-label", m[4])
+          : span("g-arrow", line));
+        return;
+      }
+      if (/^\*\s/.test(line)) { out.push(span("g-list", "* ") + withDirectives(line.slice(2))); return; }
+      if (/^>/.test(line))    { out.push(span("g-quote", line)); return; }
+      if (/^---\s*$/.test(line)) { out.push(span("g-fm", line)); return; }
+      out.push(withDirectives(line));
+    });
+    return out.join("\n");
+  }
+
+  function css(src) {
+    return esc(src)
+      .replace(/(\/\*[\s\S]*?\*\/)/g, '<span class="c-comment">$1</span>')
+      .replace(/(--[\w-]+)(\s*:)/g, '<span class="c-var">$1</span>$2')
+      .replace(/^(\s*)([\w.#:\[\]@*-][^{};\n]*)(\{)/gm, '$1<span class="c-sel">$2</span>$3');
+  }
+
+  function keyvals(src) {
+    return esc(src)
+      .replace(/^(#.*)$/gm, '<span class="c-comment">$1</span>')
+      .replace(/^([\w-]+)(\s*:)/gm, '<span class="c-var">$1</span>$2');
+  }
+
+  function pick() {
+    var p = (path && path.value) || "";
+    if (/\.theme$/.test(p)) return css;
+    if (/\.feed$/.test(p)) return keyvals;
+    if (/\.(css)$/.test(p)) return css;
+    if (/\.(gmi|gemini)$/.test(p) || p === "" || !/\.[a-z0-9]+$/i.test(p)) return gemtext;
+    return esc; // unknown type: no highlighting, just escaped text
+  }
+
+  function paint() {
+    // trailing newline keeps the last line's height in the layer
+    code.innerHTML = pick()(ta.value) + "\n";
+    sync();
+  }
+  function sync() {
+    layer.scrollTop = ta.scrollTop;
+    layer.scrollLeft = ta.scrollLeft;
+  }
+
+  ta.addEventListener("input", paint);
+  ta.addEventListener("scroll", sync);
+  if (path) path.addEventListener("input", paint);
+  window.addEventListener("resize", sync);
+  paint();
+})();

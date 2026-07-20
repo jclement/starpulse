@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -21,6 +22,8 @@ import (
 	"github.com/jclement/starpulse/internal/auth"
 	"github.com/jclement/starpulse/internal/config"
 	"github.com/jclement/starpulse/internal/feed"
+	"github.com/jclement/starpulse/internal/highlight"
+	"github.com/jclement/starpulse/internal/render"
 	"github.com/jclement/starpulse/internal/site"
 	"github.com/jclement/starpulse/internal/store"
 )
@@ -36,6 +39,7 @@ var pageTpl = template.Must(template.New("page").Parse(`<!DOCTYPE html>
 <title>{{.Title}}</title>
 <meta name="description" content="{{.Desc}}">
 <link rel="stylesheet" href="/_/style.css?v={{.AssetV}}">
+{{if .Highlight}}<link rel="stylesheet" href="/_/highlight.css?v={{.AssetV}}">{{end}}
 {{range .Feeds}}<link rel="alternate" type="application/atom+xml" title="{{.Title}}" href="{{.Path}}">
 {{end}}
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✨</text></svg>">
@@ -55,14 +59,15 @@ var pageTpl = template.Must(template.New("page").Parse(`<!DOCTYPE html>
 `))
 
 type pageData struct {
-	Title    string
-	Desc     string
-	Host     string
-	Body     template.HTML
-	Theme    template.CSS
-	EditPath string // set when logged in and the page has an editable source
-	AssetV   string // cache-buster for embedded assets
-	Feeds    []config.Feed
+	Title     string
+	Desc      string
+	Host      string
+	Body      template.HTML
+	Theme     template.CSS
+	EditPath  string // set when logged in and the page has an editable source
+	AssetV    string // cache-buster for embedded assets
+	Feeds     []config.Feed
+	Highlight bool
 }
 
 // Server is the web half of starpulse.
@@ -79,6 +84,24 @@ type Server struct {
 
 	throttle   *authThrottle
 	oauthCodes *codeStore
+	hl         *highlight.Highlighter
+	hlOnce     sync.Once
+}
+
+// highlighter builds (once) the syntax highlighter for code blocks.
+func (s *Server) highlighter() *highlight.Highlighter {
+	s.hlOnce.Do(func() {
+		s.hl = highlight.New(s.Cfg.Highlight.Style, s.Cfg.Highlight.DarkStyle)
+	})
+	return s.hl
+}
+
+// renderOpts carries the highlighter into the gemtext renderer when enabled.
+func (s *Server) renderOpts() render.Options {
+	if !s.Cfg.Highlight.Enabled {
+		return render.Options{}
+	}
+	return render.Options{Highlight: s.highlighter().Render}
 }
 
 const sessionCookie = "starpulse_session"
@@ -111,6 +134,11 @@ func (s *Server) Handler() http.Handler {
 	sub, _ := fs.Sub(assets, "assets")
 	mux.Handle("/_/", http.StripPrefix("/_/", cacheControl(http.FileServer(http.FS(sub)))))
 
+	mux.HandleFunc("/_/highlight.css", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		_, _ = w.Write([]byte(s.highlighter().CSS()))
+	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "ok")
 	})
@@ -195,14 +223,15 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, titl
 		editPath = ""
 	}
 	_ = pageTpl.Execute(w, pageData{
-		Title:    title,
-		Desc:     desc,
-		Host:     s.Cfg.Hostname,
-		Body:     template.HTML(wrapEmoji(body)),
-		Theme:    template.CSS(theme),
-		EditPath: editPath,
-		AssetV:   site.BuildVersion,
-		Feeds:    s.discoverableFeeds(),
+		Title:     title,
+		Desc:      desc,
+		Host:      s.Cfg.Hostname,
+		Body:      template.HTML(wrapEmoji(body)),
+		Theme:     template.CSS(theme),
+		EditPath:  editPath,
+		AssetV:    site.BuildVersion,
+		Feeds:     s.discoverableFeeds(),
+		Highlight: s.Cfg.Highlight.Enabled,
 	})
 }
 
@@ -266,7 +295,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "public, max-age=3600")
 		http.ServeContent(w, r, "", res.File.Updated, strings.NewReader(string(res.File.Content)))
 	case site.PageResult:
-		body := gemtextBody(res.Page.Gemtext)
+		body := s.gemtextBody(res.Page.Gemtext)
 		editPath := res.Page.SourcePath
 		s.render(w, r, http.StatusOK, s.pageTitle(res.Page.Title), s.Cfg.Hostname, res.Page.Theme, editPath, body)
 	default:

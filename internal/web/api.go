@@ -291,7 +291,7 @@ func (s *Server) apiPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, wrapEmoji(render.GemtextToHTML(string(body))))
+	fmt.Fprint(w, wrapEmoji(render.GemtextToHTMLOpts(string(body), s.renderOpts())))
 }
 
 func orEmpty[T any](v []T) []T {
