@@ -33,7 +33,7 @@ var pageTpl = template.Must(template.New("page").Parse(`<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Title}}</title>
 <meta name="description" content="{{.Desc}}">
-<link rel="stylesheet" href="/_/style.css">
+<link rel="stylesheet" href="/_/style.css?v={{.AssetV}}">
 <link rel="alternate" type="application/atom+xml" title="feed" href="/feed.xml">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✨</text></svg>">
 {{if .Theme}}<style>
@@ -58,6 +58,7 @@ type pageData struct {
 	Body     template.HTML
 	Theme    template.CSS
 	EditPath string // set when logged in and the page has an editable source
+	AssetV   string // cache-buster for embedded assets
 }
 
 // Server is the web half of starpulse.
@@ -178,6 +179,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, titl
 		Body:     template.HTML(wrapEmoji(body)),
 		Theme:    template.CSS(theme),
 		EditPath: editPath,
+		AssetV:   site.BuildVersion,
 	})
 }
 

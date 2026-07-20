@@ -3,12 +3,14 @@ package web
 import (
 	"fmt"
 	"html"
+	"html/template"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
+	"github.com/jclement/starpulse/internal/site"
 	"github.com/jclement/starpulse/internal/store"
 )
 
@@ -37,7 +39,7 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 }
 
 func (s *Server) adminRender(w http.ResponseWriter, r *http.Request, title, body string) {
-	body += `<script src="/_/admin.js" defer></script>`
+	body += `<script src="/_/admin.js?v=` + site.BuildVersion + `" defer></script>`
 	s.render(w, r, http.StatusOK, title+" · admin · "+s.Cfg.Hostname, "admin", "", "", body)
 }
 
@@ -93,6 +95,51 @@ func sizeStr(n int64) string {
 	}
 }
 
+var editorTpl = template.Must(template.New("editor").Parse(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · edit · {{.Host}}</title>
+<link rel="stylesheet" href="/_/style.css?v={{.AssetV}}">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✎</text></svg>">
+</head>
+<body class="editor-body">
+<form id="ed" method="post" action="/admin/save">
+<div class="ed-bar">
+<input type="text" name="path" id="path" value="{{.Path}}" placeholder="/about.gmi" spellcheck="false" autocomplete="off"{{if not .Path}} autofocus{{end}}>
+{{if .OldPath}}<input type="hidden" name="oldpath" value="{{.OldPath}}">{{end}}
+<span id="ed-status" class="dim"></span>
+<span class="ed-spacer"></span>
+<button type="submit">save</button>
+<button type="button" id="pv-toggle" hidden>preview</button>
+{{if .OldPath}}<a class="btn quiet" href="/admin/versions?path={{.OldPath}}">history</a><a class="btn quiet" href="{{.ViewURL}}">view</a>{{end}}
+<a class="btn quiet" href="/admin">close</a>
+</div>
+<div class="ed-main">
+<textarea name="content" id="content" spellcheck="false" placeholder="# A fresh page
+
+Gemtext goes here — or CSS if the path is a .theme file.
+
+Directives: {{"{{"}}list [folder] [limit]{{"}}"}} · {{"{{"}}include /path{{"}}"}} · {{"{{"}}now [limit]{{"}}"}} · {{"{{"}}random /path{{"}}"}} · {{"{{"}}count{{"}}"}} · {{"{{"}}rev{{"}}"}} · {{"{{"}}updated{{"}}"}}"{{if .Path}} autofocus{{end}}>{{.Content}}</textarea>
+<div id="pv-pane" class="ed-preview" hidden><div id="preview"></div></div>
+</div>
+</form>
+<script src="/_/admin.js?v={{.AssetV}}" defer></script>
+</body>
+</html>
+`))
+
+type editorData struct {
+	Title   string
+	Host    string
+	Path    string
+	OldPath string
+	ViewURL string
+	Content string
+	AssetV  string
+}
+
 func (s *Server) adminEdit(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Query().Get("path")
 	isNew := r.URL.Query().Get("new") == "1" || p == ""
@@ -113,38 +160,20 @@ func (s *Server) adminEdit(w http.ResponseWriter, r *http.Request) {
 		}
 		content = string(pg.Content)
 	}
-	var b strings.Builder
 	title := p
 	if isNew {
 		title = "new page"
 	}
-	fmt.Fprintf(&b, "<h1>%s</h1>\n%s", html.EscapeString(title), adminNav())
-	b.WriteString(`<form class="admin" method="post" action="/admin/save">`)
-	fmt.Fprintf(&b, `<label for="path">path (e.g. /about.gmi, /posts/2026-07-19-hello.gmi, /posts/.header, /.theme)</label>
-<input type="text" id="path" name="path" value="%s"%s>`, html.EscapeString(p), attrIf(isNew, " autofocus"))
-	if !isNew {
-		fmt.Fprintf(&b, `<input type="hidden" name="oldpath" value="%s">`, html.EscapeString(p))
-	}
-	fmt.Fprintf(&b, `<label for="content">content (gemtext — or CSS for .theme)</label>
-<textarea id="content" name="content"%s>%s</textarea>`, attrIf(!isNew, " autofocus"), html.EscapeString(content))
-	b.WriteString(`<div class="bar"><button type="submit">save</button>`)
-	if !isNew {
-		fmt.Fprintf(&b, `<a class="btn quiet" href="/admin/versions?path=%s">history</a>`, url.QueryEscape(p))
-		fmt.Fprintf(&b, `<a class="btn quiet" href="%s">view</a>`, html.EscapeString(pageURL(p)))
-	}
-	b.WriteString(`</div></form>`)
-	if !isNew {
-		fmt.Fprintf(&b, `<form class="inline" method="post" action="/admin/delete"><input type="hidden" name="path" value="%s"><button class="danger" type="submit">delete page</button></form>`, html.EscapeString(p))
-	}
-	b.WriteString(`<p class="dim">Directives: <code>{{list [folder] [limit]}}</code> · <code>{{include /path}}</code> · <code>{{now [limit]}}</code> · <code>{{random /path}}</code> · <code>{{count}}</code> · <code>{{rev}}</code> · <code>{{updated}}</code> · <code>{{version}}</code></p>`)
-	s.adminRender(w, r, title, b.String())
-}
-
-func attrIf(cond bool, attr string) string {
-	if cond {
-		return attr
-	}
-	return ""
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = editorTpl.Execute(w, editorData{
+		Title:   title,
+		Host:    s.Cfg.Hostname,
+		Path:    p,
+		OldPath: p,
+		ViewURL: pageURL(p),
+		Content: content,
+		AssetV:  site.BuildVersion,
+	})
 }
 
 func (s *Server) adminSave(w http.ResponseWriter, r *http.Request) {

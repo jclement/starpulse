@@ -225,6 +225,37 @@ func TestAdminSaveDeleteRestore(t *testing.T) {
 	}
 }
 
+func TestEditorPage(t *testing.T) {
+	_, st, ts := testServer(t)
+	_, _ = st.SavePage("/page.gmi", []byte("# Editable\n{{count}}"), "", "t")
+	client := login(t, ts, testPassword)
+
+	resp, err := client.Get(ts.URL + "/admin/edit?path=/page.gmi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	body := string(b)
+	for _, want := range []string{`id="ed"`, `id="content"`, `id="pv-toggle"`, "{{count}}", `class="editor-body"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("editor missing %s", want)
+		}
+	}
+	// raw source must be escaped, not rendered
+	if strings.Contains(body, "<h1>Editable</h1>") {
+		t.Error("editor rendered content instead of source")
+	}
+
+	// new-page editor
+	resp, _ = client.Get(ts.URL + "/admin/edit?path=&new=1")
+	b, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(b), `id="ed"`) || strings.Contains(string(b), `name="oldpath"`) {
+		t.Error("new-page editor wrong")
+	}
+}
+
 func TestAPIAuthAndCRUD(t *testing.T) {
 	_, st, ts := testServer(t)
 	_, _ = st.SavePage("/index.gmi", []byte("# Home"), "", "t")

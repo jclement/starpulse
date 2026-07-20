@@ -203,6 +203,93 @@ form.admin textarea {
   resize: vertical;
   white-space: pre;
 }
+
+/* ---- full-screen editor ---- */
+
+[hidden] { display: none !important; }
+
+body.editor-body { height: 100vh; height: 100dvh; overflow: hidden; }
+#ed { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+
+.ed-bar {
+  display: flex;
+  gap: 0.5em;
+  align-items: center;
+  padding: 0.55em 0.9em;
+  border-bottom: 1px solid var(--line);
+  background: var(--pre-bg);
+  flex-wrap: wrap;
+}
+.ed-bar input[type="text"] {
+  flex: 0 1 24em;
+  min-width: 10em;
+  font: inherit;
+  font-size: 0.92em;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.35em 0.7em;
+}
+.ed-bar input[type="text"]:focus { outline: 2px solid var(--accent); border-color: transparent; }
+.ed-bar .btn, .ed-bar button {
+  font: inherit;
+  font-size: 0.88em;
+  font-weight: 600;
+  border: none;
+  border-radius: 6px;
+  padding: 0.35em 0.9em;
+  cursor: pointer;
+  text-decoration: none;
+  color: var(--bg);
+  background: var(--accent);
+}
+.ed-bar .btn.quiet, .ed-bar button.quiet, .ed-bar #pv-toggle {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+}
+.ed-bar #pv-toggle.on { outline: 2px solid var(--accent); }
+.ed-spacer { flex: 1; }
+#ed-status { font-size: 0.85em; color: var(--accent-2); white-space: nowrap; }
+
+.ed-main { flex: 1; display: flex; min-height: 0; }
+.ed-main textarea {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.95em;
+  line-height: 1.6;
+  padding: 1.2em 1.4em 40vh;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow: auto;
+  tab-size: 4;
+}
+.ed-preview {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  border-left: 1px solid var(--line);
+  background: var(--bg);
+}
+.ed-preview > div { padding: 0.4em 1.4em 4em; }
+
+/* narrow screens: preview becomes a full overlay over the textarea */
+@media (max-width: 1000px) {
+  .ed-preview {
+    position: fixed;
+    inset: 0;
+    top: 3.4em;
+    border-left: none;
+    z-index: 10;
+  }
+}
 form.admin input:focus, form.admin textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
 
 .btn, form.admin button, form.inline button {
