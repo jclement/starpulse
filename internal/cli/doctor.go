@@ -105,6 +105,16 @@ func Doctor(cfg *config.Config) error {
 		}
 	}
 
+	if cfg.SSH.Enabled {
+		conn, err := net.DialTimeout("tcp", localAddr(cfg.SSH.Addr), 3*time.Second)
+		if err != nil {
+			add(false, "ssh %s not reachable: %v", cfg.SSH.Addr, err)
+		} else {
+			conn.Close()
+			add(true, "ssh %s reachable", cfg.SSH.Addr)
+		}
+	}
+
 	// dns
 	if cfg.Hostname != "localhost" {
 		if addrs, err := net.LookupHost(cfg.Hostname); err != nil {

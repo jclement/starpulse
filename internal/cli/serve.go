@@ -14,6 +14,7 @@ import (
 	"github.com/jclement/starpulse/internal/config"
 	"github.com/jclement/starpulse/internal/gemini"
 	"github.com/jclement/starpulse/internal/site"
+	"github.com/jclement/starpulse/internal/sshui"
 	"github.com/jclement/starpulse/internal/store"
 	"github.com/jclement/starpulse/internal/tor"
 	"github.com/jclement/starpulse/internal/web"
@@ -44,6 +45,7 @@ func Serve(cfg *config.Config, logger *log.Logger) error {
 		"gemini", cfg.Gemini.Enabled,
 		"http", cfg.HTTP.Enabled,
 		"https", cfg.HTTPS.Enabled,
+		"ssh", cfg.SSH.Enabled,
 		"titan", cfg.Titan.Enabled,
 		"tor", cfg.Tor.Enabled)
 	if cfg.AdminPassword == "" {
@@ -83,7 +85,15 @@ func Serve(cfg *config.Config, logger *log.Logger) error {
 		}
 	}
 
-	errCh := make(chan error, 2)
+	errCh := make(chan error, 3)
+
+	if cfg.SSH.Enabled {
+		sshSrv, err := sshui.New(cfg, st, sy, logger.With("proto", "ssh"))
+		if err != nil {
+			return fmt.Errorf("ssh server: %w", err)
+		}
+		go func() { errCh <- sshSrv.ListenAndServe() }()
+	}
 
 	if cfg.Gemini.Enabled {
 		cert, err := certutil.LoadOrCreate(cfg.DataDir, cfg.Hostname)

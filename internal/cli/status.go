@@ -63,6 +63,9 @@ func Status(cfg *config.Config) error {
 	if cfg.HTTPS.Enabled {
 		doors = append(doors, "https "+cfg.HTTPS.Addr)
 	}
+	if cfg.SSH.Enabled {
+		doors = append(doors, "ssh "+cfg.SSH.Addr)
+	}
 	if o := onionOf(cfg); o != "" {
 		doors = append(doors, "🧅 "+o)
 	}
@@ -87,7 +90,7 @@ func Status(cfg *config.Config) error {
 		total += h.Count
 	}
 	fmt.Printf("\n%s  views by protocol%s %s(%d total)%s\n\n", cBold, cReset, cDim, total, cReset)
-	protoOrder := []string{"http", "https", "gemini", "http+tor", "gemini+tor"}
+	protoOrder := []string{"http", "https", "gemini", "ssh", "http+tor", "gemini+tor"}
 	var maxProto int64
 	for _, n := range byProto {
 		if n > maxProto {
