@@ -7,6 +7,7 @@ import (
 	"net"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -64,11 +65,12 @@ var ansiRe = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[
 
 // tuiSession opens a PTY shell and gives helpers to interact with the TUI.
 type tuiSession struct {
-	t     *testing.T
-	sess  *gossh.Session
-	stdin io.WriteCloser
-	out   chan byte
-	seen  strings.Builder
+	t      *testing.T
+	sess   *gossh.Session
+	stdin  io.WriteCloser
+	mu     sync.Mutex
+	seen   []byte
+	closed bool
 }
 
 func openTUI(t *testing.T, client *gossh.Client) *tuiSession {
@@ -85,19 +87,21 @@ func openTUI(t *testing.T, client *gossh.Client) *tuiSession {
 	if err := sess.Shell(); err != nil {
 		t.Fatal(err)
 	}
-	ts := &tuiSession{t: t, sess: sess, stdin: stdin, out: make(chan byte, 65536)}
+	ts := &tuiSession{t: t, sess: sess, stdin: stdin}
+	// lossless collector: append every byte to an unbounded buffer
 	go func() {
 		buf := make([]byte, 4096)
 		for {
 			n, err := stdout.Read(buf)
-			for i := 0; i < n; i++ {
-				select {
-				case ts.out <- buf[i]:
-				default:
-				}
+			if n > 0 {
+				ts.mu.Lock()
+				ts.seen = append(ts.seen, buf[:n]...)
+				ts.mu.Unlock()
 			}
 			if err != nil {
-				close(ts.out)
+				ts.mu.Lock()
+				ts.closed = true
+				ts.mu.Unlock()
 				return
 			}
 		}
@@ -106,25 +110,30 @@ func openTUI(t *testing.T, client *gossh.Client) *tuiSession {
 	return ts
 }
 
+func (ts *tuiSession) text() string {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ansiRe.ReplaceAllString(string(ts.seen), "")
+}
+
 // expect waits until the (ANSI-stripped) output stream contains substr.
 func (ts *tuiSession) expect(substr string) {
 	ts.t.Helper()
-	deadline := time.After(10 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for {
-		if strings.Contains(ansiRe.ReplaceAllString(ts.seen.String(), ""), substr) {
+		if strings.Contains(ts.text(), substr) {
 			return
 		}
-		select {
-		case b, ok := <-ts.out:
-			if !ok {
-				ts.t.Fatalf("stream closed waiting for %q; saw:\n%s", substr,
-					tail(ansiRe.ReplaceAllString(ts.seen.String(), ""), 2000))
-			}
-			ts.seen.WriteByte(b)
-		case <-deadline:
-			ts.t.Fatalf("timeout waiting for %q; saw:\n%s", substr,
-				tail(ansiRe.ReplaceAllString(ts.seen.String(), ""), 2000))
+		ts.mu.Lock()
+		done := ts.closed
+		ts.mu.Unlock()
+		if done && !strings.Contains(ts.text(), substr) {
+			ts.t.Fatalf("stream closed waiting for %q; saw:\n%s", substr, tail(ts.text(), 2000))
 		}
+		if time.Now().After(deadline) {
+			ts.t.Fatalf("timeout waiting for %q; saw:\n%s", substr, tail(ts.text(), 2000))
+		}
+		time.Sleep(15 * time.Millisecond)
 	}
 }
 
@@ -306,6 +315,28 @@ func TestHelp(t *testing.T) {
 		t.Error("editor content lost across help overlay")
 	}
 	ts.send("\x11")
+	ts.send("q")
+}
+
+func TestFuzzyGoto(t *testing.T) {
+	_, st, addr := startServer(t)
+	_, _ = st.SavePage("/posts/2026-07-19-hello.gmi", []byte("# Hello Post"), "", "t")
+	_, _ = st.SavePage("/contact.gmi", []byte("# Contact Me"), "", "t")
+	c, err := dial(t, addr, "guest", "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	ts := openTUI(t, c)
+	ts.expect("SSH Home")
+
+	// open goto, type a fuzzy fragment, confirm the match list + navigation
+	ts.send("g")
+	ts.expect("goto (fuzzy)")
+	ts.send("hello")
+	ts.expect("/posts/2026-07-19-hello")
+	ts.send("\r") // opens the top match
+	ts.expect("Hello Post")
 	ts.send("q")
 }
 

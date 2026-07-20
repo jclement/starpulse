@@ -11,7 +11,7 @@ func helpDoc(admin bool) string {
 * enter — open the selected link
 * 1–9 — open the Nth link on screen
 * b or backspace — go back
-* g — go to a path
+* g — go to a page (fuzzy autocomplete: type, ↑↓ to pick, ↵ opens)
 * / — full-text search
 * h — home page
 * r — reload

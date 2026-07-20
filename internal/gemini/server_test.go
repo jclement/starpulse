@@ -200,6 +200,57 @@ func TestTitanUploadAuth(t *testing.T) {
 	}
 }
 
+func TestTitanEditsIndexAndKeepsGemtext(t *testing.T) {
+	ts := startServer(t)
+	_, _ = ts.st.SavePage("/index.gmi", []byte("# Old Home"), "", "seed")
+
+	// editing the ROOT (path "/") must target /index.gmi, and Lagrange's
+	// text/plain mime must not downgrade the gemtext page
+	body := []byte("# New Home\n\nvia titan at root")
+	req := fmt.Sprintf("titan://localhost/;mime=text/plain;size=%d", len(body))
+	resp := ts.request(t, req, &ts.client, body)
+	if !strings.HasPrefix(resp, "30 ") {
+		t.Fatalf("root titan upload: %q", resp)
+	}
+	pg, err := ts.st.GetPage("/index.gmi")
+	if err != nil || string(pg.Content) != string(body) {
+		t.Fatalf("index not updated: err=%v content=%q", err, pg.Content)
+	}
+	if !strings.HasPrefix(pg.Mime, "text/gemini") {
+		t.Errorf("gemtext page stored as %q (text/plain leaked through)", pg.Mime)
+	}
+
+	// a subfolder directory target maps to its index too
+	body2 := []byte("# Posts Index")
+	req2 := fmt.Sprintf("titan://localhost/posts/;mime=text/plain;size=%d", len(body2))
+	if resp := ts.request(t, req2, &ts.client, body2); !strings.HasPrefix(resp, "30 ") {
+		t.Fatalf("dir titan upload: %q", resp)
+	}
+	if pg, err := ts.st.GetPage("/posts/index.gmi"); err != nil || string(pg.Content) != string(body2) {
+		t.Errorf("posts index not created: %v", err)
+	}
+
+	// an extensionless page target becomes .gmi
+	body3 := []byte("# Fresh")
+	req3 := fmt.Sprintf("titan://localhost/fresh;mime=text/plain;size=%d", len(body3))
+	if resp := ts.request(t, req3, &ts.client, body3); !strings.HasPrefix(resp, "30 ") {
+		t.Fatalf("extensionless titan upload: %q", resp)
+	}
+	if _, err := ts.st.GetPage("/fresh.gmi"); err != nil {
+		t.Error("extensionless page not created as .gmi")
+	}
+
+	// a real image keeps its binary mime
+	png := []byte("\x89PNG\r\n")
+	req4 := fmt.Sprintf("titan://localhost/media/x.png;mime=text/plain;size=%d", len(png))
+	if resp := ts.request(t, req4, &ts.client, png); !strings.HasPrefix(resp, "30 ") {
+		t.Fatalf("image titan upload: %q", resp)
+	}
+	if pg, _ := ts.st.GetPage("/media/x.png"); pg == nil || pg.Mime != "image/png" {
+		t.Errorf("png mime wrong: %v", pg)
+	}
+}
+
 func TestTitanLimitsAndBadPaths(t *testing.T) {
 	ts := startServer(t)
 	huge := ts.cfg.MaxUploadBytes + 1

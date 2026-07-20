@@ -287,6 +287,48 @@ func (s *Server) authorizedCert(conn net.Conn) (string, bool) {
 	return fp, false
 }
 
+// titanTarget resolves a titan upload path to a storage path, mapping
+// directory-style targets to their index.gmi. Returns "" for invalid paths.
+func titanTarget(st *store.Store, rawPath string) string {
+	if rawPath == "" {
+		rawPath = "/"
+	}
+	// bare root or trailing-slash directory → its index page
+	if rawPath == "/" || strings.HasSuffix(rawPath, "/") {
+		idx := strings.TrimSuffix(rawPath, "/") + "/index.gmi"
+		if cp, ok := store.CleanPath(idx); ok {
+			return cp
+		}
+		return ""
+	}
+	// an extensionless path that already exists as a directory → its index;
+	// but if it exists (or resolves) as a page, keep it as-is
+	cp, ok := store.CleanPath(rawPath)
+	if !ok {
+		return ""
+	}
+	if store.MimeFor(cp) == "application/octet-stream" && !strings.Contains(pathExt(cp), ".") {
+		// no file extension: prefer an existing .gmi page, else treat the
+		// extensionless name as a .gmi page to create
+		if st.PageExists(cp) {
+			return cp
+		}
+		return cp + ".gmi"
+	}
+	return cp
+}
+
+func pathExt(p string) string {
+	base := p
+	if i := strings.LastIndexByte(p, '/'); i >= 0 {
+		base = p[i+1:]
+	}
+	if i := strings.LastIndexByte(base, '.'); i >= 0 {
+		return base[i:]
+	}
+	return ""
+}
+
 // serveTitan handles titan://host/path;mime=...;size=N uploads into the
 // page store. Zero size deletes, per titan convention.
 func (s *Server) serveTitan(conn net.Conn, r *bufio.Reader, u *url.URL) (int, string) {
@@ -323,8 +365,11 @@ func (s *Server) serveTitan(conn net.Conn, r *bufio.Reader, u *url.URL) (int, st
 		return 59, "bad size"
 	}
 
-	cleaned, ok := store.CleanPath(rawPath)
-	if !ok {
+	// a directory-style target (/, /posts/, or the extensionless URL of a
+	// directory) edits that directory's index.gmi — so titan-editing the
+	// page you're viewing works even at the site root.
+	cleaned := titanTarget(s.Store, rawPath)
+	if cleaned == "" {
 		respond(conn, 59, "bad path")
 		return 59, "bad path"
 	}
@@ -350,8 +395,13 @@ func (s *Server) serveTitan(conn net.Conn, r *bufio.Reader, u *url.URL) (int, st
 	if err != nil {
 		mime = ""
 	}
-	if mime == "" || mime == "application/octet-stream" {
-		mime = store.MimeFor(cleaned)
+	// the path extension is authoritative for known text/image types —
+	// gemini clients (Lagrange) upload with a generic text/plain, which
+	// would otherwise store gemtext pages as plain text.
+	if byExt := store.MimeFor(cleaned); byExt != "application/octet-stream" {
+		mime = byExt
+	} else if mime == "" {
+		mime = byExt
 	}
 	if _, err := s.Store.SavePage(cleaned, content, mime, author); err != nil {
 		respond(conn, 40, "save failed")

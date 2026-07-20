@@ -62,6 +62,10 @@ type model struct {
 	input      textinput.Model
 	inputKind  inputKind
 	inputLabel string
+	// goto fuzzy picker
+	pickAll  []string // all page URLs (for inputGoto)
+	pickHits []string // current fuzzy matches
+	pickSel  int
 
 	// help overlay (edit mode)
 	helpVp viewport.Model
@@ -286,7 +290,7 @@ func (m *model) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "?":
 		m.showDoc("/help", "help", helpDoc(m.admin))
 	case "g":
-		m.prompt(inputGoto, "go to path", "/")
+		m.prompt(inputGoto, "goto (fuzzy)", "")
 	case "/":
 		m.prompt(inputSearch, "search", "")
 	case "e":
@@ -343,6 +347,51 @@ func (m *model) prompt(kind inputKind, label, value string) {
 	in.Width = max(20, m.width-10)
 	m.input = in
 	m.mode = modeInput
+	m.pickAll = nil
+	m.pickHits = nil
+	m.pickSel = 0
+	if kind == inputGoto {
+		m.pickAll = m.allURLs()
+		m.updatePicks()
+	}
+}
+
+// allURLs lists every browsable page URL for the goto picker.
+func (m *model) allURLs() []string {
+	metas, err := m.store.ListAll()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, mm := range metas {
+		if mm.Binary || strings.HasPrefix(pathBase(mm.Path), ".") {
+			continue
+		}
+		if !strings.HasSuffix(mm.Path, ".gmi") {
+			out = append(out, mm.Path) // static files: exact path
+			continue
+		}
+		u := strings.TrimSuffix(mm.Path, ".gmi")
+		if strings.HasSuffix(u, "/index") {
+			u = strings.TrimSuffix(u, "index")
+		}
+		out = append(out, u)
+	}
+	return out
+}
+
+func pathBase(p string) string {
+	if i := strings.LastIndexByte(p, '/'); i >= 0 {
+		return p[i+1:]
+	}
+	return p
+}
+
+func (m *model) updatePicks() {
+	m.pickHits = fuzzyRank(strings.TrimSpace(m.input.Value()), m.pickAll, 8)
+	if m.pickSel >= len(m.pickHits) {
+		m.pickSel = 0
+	}
 }
 
 func (m *model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -350,7 +399,26 @@ func (m *model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc", "ctrl+c":
 		m.mode = modeBrowse
 		return m, nil
+	case "down", "ctrl+n", "tab":
+		if m.inputKind == inputGoto && len(m.pickHits) > 0 {
+			m.pickSel = (m.pickSel + 1) % len(m.pickHits)
+			return m, nil
+		}
+	case "up", "ctrl+p", "shift+tab":
+		if m.inputKind == inputGoto && len(m.pickHits) > 0 {
+			m.pickSel--
+			if m.pickSel < 0 {
+				m.pickSel = len(m.pickHits) - 1
+			}
+			return m, nil
+		}
 	case "enter":
+		// goto: prefer the highlighted fuzzy match over the raw text
+		if m.inputKind == inputGoto && len(m.pickHits) > 0 {
+			m.mode = modeBrowse
+			m.navigate(m.pickHits[m.pickSel], true)
+			return m, nil
+		}
 		val := strings.TrimSpace(m.input.Value())
 		m.mode = modeBrowse
 		if val == "" {
@@ -373,6 +441,9 @@ func (m *model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
+	if m.inputKind == inputGoto {
+		m.updatePicks()
+	}
 	return m, cmd
 }
 
@@ -607,9 +678,15 @@ func (m *model) statusLine() string {
 
 func (m *model) viewBrowse() string {
 	var footer string
+	body := m.vp.View()
 	switch m.mode {
 	case modeInput:
 		footer = m.st.bbsBar.Render(" "+m.inputLabel+": ") + m.input.View()
+		// goto: show live fuzzy matches above the prompt, replacing the
+		// bottom of the page body so the layout height stays constant
+		if m.inputKind == inputGoto && len(m.pickHits) > 0 {
+			body = m.pickerView()
+		}
 	case modeConfirm:
 		footer = m.bbsPad(m.st.bbsErr.Render(" delete " + m.confirm + "? [y/N] "))
 	default:
@@ -623,7 +700,28 @@ func (m *model) viewBrowse() string {
 			footer = m.bbsHelp(pairs...)
 		}
 	}
-	return m.header(m.url) + "\n" + m.vp.View() + "\n" + footer
+	return m.header(m.url) + "\n" + body + "\n" + footer
+}
+
+// pickerView renders the fuzzy goto match list, filling the viewport height.
+func (m *model) pickerView() string {
+	rows := m.vp.Height
+	lines := make([]string, 0, rows)
+	lines = append(lines, m.st.dim.Render("  ↑↓ select · ↵ open · esc cancel"))
+	for i, h := range m.pickHits {
+		if len(lines) >= rows {
+			break
+		}
+		if i == m.pickSel {
+			lines = append(lines, m.st.linkSel.Render("▸ "+h))
+		} else {
+			lines = append(lines, m.st.link.Render("  "+h))
+		}
+	}
+	for len(lines) < rows {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m *model) viewEdit() string {
