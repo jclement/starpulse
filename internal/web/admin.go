@@ -37,6 +37,9 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/stats", guard(s.adminStats))
 	mux.HandleFunc("/admin/feed", guard(s.adminFeedToggle))
 	mux.HandleFunc("/admin/prefix", guard(s.adminPrefix))
+	mux.HandleFunc("/admin/backup", guard(s.adminBackup))
+	mux.HandleFunc("/admin/backup.zip", guard(s.adminBackupZip))
+	mux.HandleFunc("/admin/backup/restore", guard(s.adminBackupRestore))
 	mux.HandleFunc("/admin/manual", guard(s.adminManual))
 }
 
@@ -53,6 +56,7 @@ func adminNav() string {
 <a class="new" href="/admin/edit?path=&new=1">+ page</a>
 <a href="/admin/upload">upload</a>
 <a href="/admin/stats">stats</a>
+<a href="/admin/backup">backup</a>
 <a href="/admin/manual">manual</a>
 <a class="far" href="/">view site</a>
 <form class="inline" method="post" action="/logout"><button class="linkish" type="submit">logout</button></form>

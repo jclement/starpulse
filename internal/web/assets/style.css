@@ -595,6 +595,23 @@ table.browse tr.special td:first-child a { color: var(--dim); }
 }
 p.newhere { margin: 1em 0 2em; text-align: right; }
 
+/* checkbox / radio rows: the control sits on the same line as its label,
+   which the stacked form.admin label rule would otherwise break apart */
+form.admin label.check {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  font-weight: 400;
+  margin: 0.35em 0;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 0.95em;
+}
+form.admin label.check input { width: auto; margin: 0; flex: none; }
+/* one flex item for all the text, so it wraps as a paragraph rather than
+   splitting the label and its explanation into two ragged columns */
+form.admin label.check > span { flex: 1; min-width: 0; }
+
 /* folder settings: one line of toggles, each writing the .feed file */
 div.fset {
   display: flex;

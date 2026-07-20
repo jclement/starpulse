@@ -96,6 +96,8 @@ starpulse version
 - **Notes**: short entries. A note *is* a page — the only difference is that
   the server names the file for you — so it gets history, search and feeds
   like everything else.
+- **Backups**: download the whole site as a zip of ordinary files, restore it
+  by merging or replacing. Keys and certificates optional, and never restored.
 - **Syntax highlighting** for code blocks, rendered server-side.
 - **Automatic HTTPS**, and a **self-managed tor hidden service** forwarding
   every door you enable.
