@@ -32,15 +32,15 @@ func (s *Server) apiAuthed(r *http.Request) bool {
 	if s.Sessions.Valid(token) {
 		return true
 	}
-	ip := clientIP(r)
-	if s.authGate().blocked(ip, time.Now()) {
+	ip := auth.ClientIP(r)
+	if s.authGate().Blocked(ip, time.Now()) {
 		return false
 	}
 	if s.Cfg.AdminPassword != "" && auth.CheckPassword(s.Cfg.AdminPassword, token) {
-		s.authGate().succeed(ip)
+		s.authGate().Succeed(ip)
 		return true
 	}
-	s.authGate().fail(ip, time.Now())
+	s.authGate().Fail(ip, time.Now())
 	return false
 }
 

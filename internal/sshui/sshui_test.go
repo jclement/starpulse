@@ -537,3 +537,42 @@ func TestEditorWrapsLongLines(t *testing.T) {
 		}
 	}
 }
+
+// The ssh door must throttle admin password guesses the way the web login
+// does. Before this, a wrong password cost only a one-second sleep — and
+// nothing stopped an attacker opening connections in parallel.
+func TestAdminPasswordIsThrottled(t *testing.T) {
+	srv, _, addr := startServer(t)
+
+	// burn through the allowance; each attempt is its own connection, which
+	// is exactly how a guesser would do it
+	for i := 0; i < 10; i++ {
+		if c, err := dial(t, addr, "admin", "wrong-password"); err == nil {
+			c.Close()
+			t.Fatalf("attempt %d: a wrong password was accepted", i)
+		}
+	}
+	if !srv.gate.Blocked("127.0.0.1", time.Now()) {
+		t.Fatal("ten failures did not lock the address out")
+	}
+	// now even the right password is refused while the lockout stands
+	if c, err := dial(t, addr, "admin", adminPW); err == nil {
+		c.Close()
+		t.Error("lockout did not apply to a subsequent login")
+	}
+	// ...and a guest is unaffected: the site stays readable
+	c, err := dial(t, addr, "guest", "")
+	if err != nil {
+		t.Errorf("lockout blocked a guest: %v", err)
+	} else {
+		c.Close()
+	}
+	// once it expires, the right password works again
+	srv.gate.Succeed("127.0.0.1")
+	c2, err := dial(t, addr, "admin", adminPW)
+	if err != nil {
+		t.Errorf("admin still locked out after the record cleared: %v", err)
+	} else {
+		c2.Close()
+	}
+}

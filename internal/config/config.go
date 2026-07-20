@@ -125,6 +125,12 @@ type Config struct {
 	// Empty = the server's local time.
 	Timezone string `yaml:"timezone"`
 
+	// OAuthRedirectHosts are the extra hosts an MCP client may be sent back
+	// to after authorizing (e.g. "claude.ai"). Loopback addresses and this
+	// site's own hostname are always allowed; everything else must be named
+	// here, because a callback host is where the resulting credential lands.
+	OAuthRedirectHosts []string `yaml:"oauth_redirect_hosts"`
+
 	// MaxUploadBytes caps a single file upload (web, api, mcp, titan).
 	MaxUploadBytes int64 `yaml:"max_upload_bytes"`
 	// KeepVersions is how many historical versions to retain per page.
@@ -340,6 +346,12 @@ func Sample(hostname, password, dataDir string) string {
 # Everything here can be overridden with STARPULSE_* environment variables.
 
 hostname: %s
+
+# Hosts an MCP client may be redirected back to after you authorize it.
+# Loopback and this site's own hostname are always allowed. Add a host here
+# only if you intend to hand that host admin access to this site.
+# oauth_redirect_hosts:
+#   - claude.ai
 
 # Password for the web admin UI, /api and /mcp bearer tokens.
 # Plaintext, or a bcrypt hash (generate one with: starpulse hash-password)

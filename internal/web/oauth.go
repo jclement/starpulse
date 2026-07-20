@@ -72,10 +72,11 @@ func (c *codeStore) take(code string) (authCode, bool) {
 	return ac, true
 }
 
+// codes holds pending authorization codes. sync.Once for the same reason as
+// authGate: two concurrent first requests would each build a store, and the
+// one that lost would take a just-issued code with it.
 func (s *Server) codes() *codeStore {
-	if s.oauthCodes == nil {
-		s.oauthCodes = newCodeStore()
-	}
+	s.oauthCodesOnce.Do(func() { s.oauthCodes = newCodeStore() })
 	return s.oauthCodes
 }
 
@@ -142,22 +143,47 @@ func (s *Server) oauthRegister(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// validRedirect rejects obviously unsafe redirect targets (open redirects).
-func validRedirect(raw string) bool {
+// validRedirect decides where an authorization code may be delivered.
+//
+// This is the whole security of the authorization-code flow. Dynamic
+// registration hands every caller the same client_id and records no callback
+// URL, so there is no registered value to compare against — which means
+// accepting "any https host" let anyone send the admin a link to this very
+// site, with their own host as the callback. The consent page would be
+// genuine, on the right domain, and the resulting code — exchangeable with
+// no client secret for a long-lived admin token — would land on theirs.
+//
+// So: loopback (desktop clients that listen on 127.0.0.1), this site itself,
+// and hosts the operator has explicitly named. Nothing else, and no custom
+// schemes, which cannot be attributed to anyone.
+func (s *Server) validRedirect(raw string) bool {
 	u, err := url.Parse(raw)
-	if err != nil || !u.IsAbs() {
+	if err != nil || !u.IsAbs() || u.Host == "" {
 		return false
 	}
+	host := strings.ToLower(u.Hostname())
 	switch u.Scheme {
-	case "https":
-		return u.Host != ""
 	case "http":
-		h := u.Hostname()
-		return h == "localhost" || h == "127.0.0.1" || h == "::1"
-	default:
-		// custom app schemes (desktop clients) are fine
-		return u.Scheme != "javascript" && u.Scheme != "data"
+		if o := s.onion(); o != "" && host == strings.ToLower(o) {
+			return true // tor carries its own encryption and authentication
+		}
+		// otherwise cleartext only to loopback, where it cannot be observed
+		return host == "localhost" || host == "127.0.0.1" || host == "::1"
+	case "https":
+		if host == strings.ToLower(stripPort(s.Cfg.Hostname)) {
+			return true
+		}
+		if o := s.onion(); o != "" && host == strings.ToLower(o) {
+			return true // this same site, reached over tor
+		}
+		for _, allowed := range s.Cfg.OAuthRedirectHosts {
+			if host == strings.ToLower(strings.TrimSpace(allowed)) {
+				return true
+			}
+		}
+		return false
 	}
+	return false
 }
 
 func randToken(n int) string {
@@ -174,13 +200,16 @@ func (s *Server) oauthAuthorize(w http.ResponseWriter, r *http.Request) {
 	challenge := q.Get("code_challenge")
 	method := q.Get("code_challenge_method")
 
-	if redirectURI == "" || !validRedirect(redirectURI) {
+	if redirectURI == "" || !s.validRedirect(redirectURI) {
+		// rendered here, never redirected: an unvalidated redirect_uri is
+		// exactly what must not be followed, even to report an error
 		s.render(w, r, http.StatusBadRequest, "authorize", "oauth", "", "",
-			`<h1>Invalid request</h1><p>Missing or unacceptable redirect_uri.</p>`)
+			`<h1>Invalid request</h1><p>That redirect_uri is not allowed. Loopback addresses and this site are accepted; any other host must be listed in <code>oauth_redirect_hosts</code>.</p>`)
 		return
 	}
-	if challenge != "" && method != "S256" {
-		s.redirectErr(w, r, redirectURI, state, "invalid_request", "only S256 PKCE is supported")
+	// PKCE is required, not optional: without it a stolen code is enough
+	if challenge == "" || method != "S256" {
+		s.redirectErr(w, r, redirectURI, state, "invalid_request", "PKCE with S256 is required")
 		return
 	}
 	if s.Cfg.AdminPassword == "" {
@@ -189,18 +218,18 @@ func (s *Server) oauthAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == http.MethodPost {
-		ip := clientIP(r)
-		if s.authGate().blocked(ip, time.Now()) {
+		ip := auth.ClientIP(r)
+		if s.authGate().Blocked(ip, time.Now()) {
 			s.renderAuthorize(w, r, "Too many attempts — try again later.")
 			return
 		}
 		if !auth.CheckPassword(s.Cfg.AdminPassword, r.FormValue("password")) {
-			s.authGate().fail(ip, time.Now())
+			s.authGate().Fail(ip, time.Now())
 			time.Sleep(time.Second)
 			s.renderAuthorize(w, r, "Wrong password.")
 			return
 		}
-		s.authGate().succeed(ip)
+		s.authGate().Succeed(ip)
 
 		code := randToken(24)
 		s.codes().put(code, authCode{
@@ -300,7 +329,11 @@ func (s *Server) oauthToken(w http.ResponseWriter, r *http.Request) {
 			oauthErr(w, http.StatusBadRequest, "invalid_grant", "redirect_uri mismatch")
 			return
 		}
-		if ac.challenge != "" {
+		if ac.challenge == "" {
+			oauthErr(w, http.StatusBadRequest, "invalid_grant", "code was issued without PKCE")
+			return
+		}
+		{
 			verifier := r.FormValue("code_verifier")
 			sum := sha256.Sum256([]byte(verifier))
 			if base64.RawURLEncoding.EncodeToString(sum[:]) != ac.challenge {
@@ -312,17 +345,17 @@ func (s *Server) oauthToken(w http.ResponseWriter, r *http.Request) {
 
 	case "client_credentials":
 		// the typed-in-credentials path: secret is the admin password
-		ip := clientIP(r)
-		if s.authGate().blocked(ip, time.Now()) {
+		ip := auth.ClientIP(r)
+		if s.authGate().Blocked(ip, time.Now()) {
 			oauthErr(w, http.StatusTooManyRequests, "invalid_client", "too many attempts")
 			return
 		}
 		if s.Cfg.AdminPassword == "" || !auth.CheckPassword(s.Cfg.AdminPassword, clientSecret) {
-			s.authGate().fail(ip, time.Now())
+			s.authGate().Fail(ip, time.Now())
 			oauthErr(w, http.StatusUnauthorized, "invalid_client", "bad client credentials")
 			return
 		}
-		s.authGate().succeed(ip)
+		s.authGate().Succeed(ip)
 		issue()
 
 	case "refresh_token":

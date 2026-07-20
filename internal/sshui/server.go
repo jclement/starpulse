@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"path/filepath"
 	"strings"
 	"time"
@@ -36,11 +37,16 @@ type Server struct {
 
 	wish      *ssh.Server
 	adminKeys []ssh.PublicKey
+	gate      *auth.Throttle // per-IP admin password limiter
 }
 
 // New builds the wish server (host key persisted in the data dir).
 func New(cfg *config.Config, st *store.Store, sy *site.Site, logger *log.Logger) (*Server, error) {
-	s := &Server{Cfg: cfg, Store: st, Site: sy, Log: logger}
+	// the same limits the web login uses: an ssh door that lets you guess
+	// the admin password at one attempt per second, in parallel, is not
+	// protected by the one-second sleep that used to be here
+	s := &Server{Cfg: cfg, Store: st, Site: sy, Log: logger,
+		gate: auth.NewThrottle(10, 5*time.Minute)}
 	for i, line := range cfg.SSH.AuthorizedKeys {
 		key, _, _, _, err := gossh.ParseAuthorizedKey([]byte(line))
 		if err != nil {
@@ -70,6 +76,15 @@ func New(cfg *config.Config, st *store.Store, sy *site.Site, logger *log.Logger)
 // pubkeyAuth: admin must present one of the configured authorized keys;
 // any key is fine for guests (it identifies nobody, but lets clients that
 // try pubkey first fall through gracefully).
+// remoteIP is the throttle key for an ssh connection: the address without
+// the ephemeral port, so a new connection per guess does not reset it.
+func remoteIP(addr net.Addr) string {
+	if h, _, err := net.SplitHostPort(addr.String()); err == nil {
+		return h
+	}
+	return addr.String()
+}
+
 // adminUser decides who is asking for admin powers. Authentication and the
 // TUI must agree exactly: if one of them were case-insensitive and the other
 // were not, "Admin" would authenticate as a guest and then be handed the
@@ -100,12 +115,22 @@ func (s *Server) authenticate(ctx ssh.Context, password string) bool {
 		if s.Cfg.AdminPassword == "" {
 			return false
 		}
-		ok := auth.CheckPassword(s.Cfg.AdminPassword, password)
-		if !ok {
-			s.Log.Warn("failed admin login", "remote", ctx.RemoteAddr().String())
-			time.Sleep(time.Second)
+		ip := remoteIP(ctx.RemoteAddr())
+		if s.gate.Blocked(ip, time.Now()) {
+			s.Log.Warn("admin login refused (too many failures)", "remote", ip)
+			return false
 		}
-		return ok
+		if auth.CheckPassword(s.Cfg.AdminPassword, password) {
+			s.gate.Succeed(ip)
+			return true
+		}
+		if s.gate.Fail(ip, time.Now()) {
+			s.Log.Warn("admin login locked out", "remote", ip)
+		} else {
+			s.Log.Warn("failed admin login", "remote", ip)
+		}
+		time.Sleep(time.Second)
+		return false
 	}
 	return true
 }

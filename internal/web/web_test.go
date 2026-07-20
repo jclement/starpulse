@@ -922,7 +922,7 @@ func TestAPIAuthAndCRUD(t *testing.T) {
 func TestLoginBruteForceLockout(t *testing.T) {
 	srv, st, ts := testServer(t)
 	_, _ = st.SavePage("/index.gmi", []byte("# Home"), "", "t")
-	srv.authGate().max = 3
+	srv.authGate().SetMax(3)
 	// exhaust the allowance with wrong passwords
 	for i := 0; i < 3; i++ {
 		resp, _ := http.PostForm(ts.URL+"/login", url.Values{"password": {"wrong"}})
@@ -943,7 +943,7 @@ func TestLoginBruteForceLockout(t *testing.T) {
 func TestBearerBruteForceLockout(t *testing.T) {
 	srv, st, ts := testServer(t)
 	_, _ = st.SavePage("/index.gmi", []byte("# Home"), "", "t")
-	srv.authGate().max = 3
+	srv.authGate().SetMax(3)
 	bad := func() int {
 		req, _ := http.NewRequest("GET", ts.URL+"/api/pages", nil)
 		req.Header.Set("Authorization", "Bearer nope")

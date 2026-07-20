@@ -141,8 +141,10 @@ func TestOAuthClientCredentials(t *testing.T) {
 
 // full authorization-code + PKCE flow
 func TestOAuthAuthorizationCodePKCE(t *testing.T) {
-	_, st, ts := testServer(t)
+	srv, st, ts := testServer(t)
 	_, _ = st.SavePage("/index.gmi", []byte("# Home"), "", "t")
+	// the operator has decided to trust this callback host
+	srv.Cfg.OAuthRedirectHosts = []string{"claude.ai"}
 
 	verifier := "a-test-verifier-value-that-is-long-enough-1234"
 	sum := sha256.Sum256([]byte(verifier))
@@ -249,10 +251,12 @@ func TestOAuthWrongPasswordAndBadRedirect(t *testing.T) {
 		t.Error("javascript: redirect_uri not rejected")
 	}
 
-	// wrong password does not mint a code
+	// wrong password does not mint a code (PKCE is required to get this far)
 	authURL := ts.URL + "/oauth/authorize?" + url.Values{
 		"response_type": {"code"}, "client_id": {"mcp"},
-		"redirect_uri": {"http://localhost:9999/cb"},
+		"redirect_uri":          {"http://localhost:9999/cb"},
+		"code_challenge":        {"Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyMDA"},
+		"code_challenge_method": {"S256"},
 	}.Encode()
 	noRedirect := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
@@ -300,4 +304,78 @@ func TestOAuthRefreshToken(t *testing.T) {
 		t.Error("garbage refresh token accepted")
 	}
 	r3.Body.Close()
+}
+
+// The authorization code is a credential, and redirect_uri decides where it
+// is delivered. Dynamic registration records no callback URL, so accepting
+// any host let an attacker send the admin a link to this very site — genuine
+// consent page, right domain — and collect the code themselves.
+func TestAuthorizeRefusesUnapprovedRedirectHosts(t *testing.T) {
+	srv, _, ts := testServer(t)
+	srv.Cfg.OAuthRedirectHosts = []string{"claude.ai"}
+	srv.Cfg.Hostname = "test.example"
+
+	ask := func(redirect string) int {
+		u := ts.URL + "/oauth/authorize?" + url.Values{
+			"response_type": {"code"}, "client_id": {"mcp"},
+			"redirect_uri":          {redirect},
+			"code_challenge":        {"Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyMDA"},
+			"code_challenge_method": {"S256"},
+		}.Encode()
+		resp, err := http.Get(u)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	for _, bad := range []string{
+		"https://evil.example/cb",         // the attack
+		"https://claude.ai.evil.example/", // suffix trickery
+		"https://evil.example/?x=claude.ai",
+		"http://evil.example/cb", // cleartext, non-loopback
+		"myapp://callback",       // unattributable custom scheme
+		"javascript:alert(1)",    //
+		"//evil.example/cb",      // scheme-relative
+		"https://",               // no host
+	} {
+		if code := ask(bad); code != http.StatusBadRequest {
+			t.Errorf("redirect_uri %q was accepted (%d)", bad, code)
+		}
+	}
+	for _, ok := range []string{
+		"https://claude.ai/api/mcp/auth_callback", // named by the operator
+		"https://test.example/cb",                 // this site
+		"http://127.0.0.1:8976/callback",          // a desktop client
+		"http://localhost:1455/oauth",
+	} {
+		if code := ask(ok); code != http.StatusOK {
+			t.Errorf("redirect_uri %q was refused (%d)", ok, code)
+		}
+	}
+}
+
+// PKCE is mandatory: a code with no verifier bound to it is usable by
+// whoever ends up holding it.
+func TestAuthorizeRequiresPKCE(t *testing.T) {
+	srv, _, ts := testServer(t)
+	srv.Cfg.Hostname = "test.example"
+	noRedirect := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	for _, q := range []url.Values{
+		{"response_type": {"code"}, "client_id": {"mcp"}, "redirect_uri": {"https://test.example/cb"}},
+		{"response_type": {"code"}, "client_id": {"mcp"}, "redirect_uri": {"https://test.example/cb"},
+			"code_challenge": {"plain-value"}, "code_challenge_method": {"plain"}},
+	} {
+		resp, err := noRedirect.Get(ts.URL + "/oauth/authorize?" + q.Encode())
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			t.Errorf("consent page shown without S256 PKCE: %v", q)
+		}
+	}
 }

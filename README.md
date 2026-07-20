@@ -266,7 +266,12 @@ the `key: value` special files — hand-rolled, no editor library.
   `ctrl+s` save, `ctrl+g` syntax help, `g` fuzzy page jump, `/` search.
 - **REST**: `Authorization: Bearer <admin_password>` against `/api/pages`,
   `/api/now`, `/api/search`, `/api/versions`, `/api/stats`.
-- **MCP**: streamable HTTP at `/mcp`.
+- **MCP**: streamable HTTP at `/mcp`. Clients authorize with OAuth 2.1
+  (PKCE required). Callbacks are only delivered to loopback, this site, or a
+  host you list in `oauth_redirect_hosts` — a callback host is where the
+  resulting admin credential lands, so it is an explicit decision. Claude
+  Desktop can instead use client id `mcp` with the admin password as the
+  secret.
 
 ```sh
 claude mcp add --transport http mysite https://example.org/mcp \

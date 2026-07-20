@@ -57,7 +57,10 @@ func (s *Server) adminManual(w http.ResponseWriter, r *http.Request) {
 	b.WriteString(editorHelpBody())
 
 	// ---- feeds -------------------------------------------------------
-	b.WriteString(`<h2>Backups</h2>
+	b.WriteString(`<h2>Connecting an AI client</h2>
+<p><code>/mcp</code> speaks MCP over HTTP. A client authorizing through OAuth must use PKCE, and is only redirected back to a loopback address, this site, or a host named in <code>oauth_redirect_hosts</code> — that host receives a credential with full admin rights, so listing one is a deliberate act. Claude Desktop can skip the flow: client id <code>mcp</code>, client secret = the admin password.</p>
+
+<h2>Backups</h2>
 <p><a href="/admin/backup">Backup</a> downloads a zip of plain files — <code>content/about.gmi</code> is the page at <code>/about.gmi</code>, byte for byte — named for this site and the moment it was taken. Version history and view counts stay behind: a backup is the content.</p>
 <p>Restoring the zip <strong>merges</strong> by default (adds and overwrites what it contains, leaves the rest); <strong>replace</strong> also deletes pages the backup does not contain. Overwritten pages keep their history, so a restore is undoable page by page. Optionally the zip can carry your tor hidden-service key, TLS certificates and ssh host key under <code>keys/</code> — restoring never touches those, so keep that copy somewhere safe.</p>
 

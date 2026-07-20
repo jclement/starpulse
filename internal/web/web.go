@@ -82,10 +82,12 @@ type Server struct {
 	// Onion returns the hidden-service hostname ("" when tor is off).
 	Onion func() string
 
-	throttle   *authThrottle
-	oauthCodes *codeStore
-	hl         *highlight.Highlighter
-	hlOnce     sync.Once
+	throttle       *auth.Throttle
+	throttleOnce   sync.Once
+	oauthCodes     *codeStore
+	oauthCodesOnce sync.Once
+	hl             *highlight.Highlighter
+	hlOnce         sync.Once
 }
 
 // highlighter builds (once) the syntax highlighter for code blocks.
@@ -106,10 +108,12 @@ func (s *Server) renderOpts() render.Options {
 
 const sessionCookie = "starpulse_session"
 
-func (s *Server) authGate() *authThrottle {
-	if s.throttle == nil {
-		s.throttle = newAuthThrottle()
-	}
+// authGate is the shared per-IP failed-auth limiter: 10 failures in five
+// minutes locks that address out for five. sync.Once because two concurrent
+// first requests would otherwise each build one and one would be discarded,
+// quietly forgetting the failures recorded in it.
+func (s *Server) authGate() *auth.Throttle {
+	s.throttleOnce.Do(func() { s.throttle = auth.NewThrottle(10, 5*time.Minute) })
 	return s.throttle
 }
 
@@ -359,14 +363,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodPost {
-		ip := clientIP(r)
-		if s.authGate().blocked(ip, time.Now()) {
+		ip := auth.ClientIP(r)
+		if s.authGate().Blocked(ip, time.Now()) {
 			s.Log.Warn("login throttled", "remote", ip)
 			s.renderLogin(w, r, "Too many attempts — try again later.")
 			return
 		}
 		if auth.CheckPassword(s.Cfg.AdminPassword, r.FormValue("password")) {
-			s.authGate().succeed(ip)
+			s.authGate().Succeed(ip)
 			http.SetCookie(w, &http.Cookie{
 				Name:     sessionCookie,
 				Value:    s.Sessions.Token(30 * 24 * time.Hour),
@@ -379,7 +383,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/admin", http.StatusSeeOther)
 			return
 		}
-		if s.authGate().fail(ip, time.Now()) {
+		if s.authGate().Fail(ip, time.Now()) {
 			s.Log.Warn("login lockout", "remote", ip)
 		} else {
 			s.Log.Warn("failed login", "remote", ip)
