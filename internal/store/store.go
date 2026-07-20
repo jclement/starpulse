@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -66,13 +67,6 @@ type Version struct {
 	Content []byte // only populated by GetVersion
 }
 
-// NowPost is a short timestamped micro-post.
-type NowPost struct {
-	ID      int64
-	Content string
-	Created time.Time
-}
-
 // Hit is a per-page, per-protocol view counter row.
 type Hit struct {
 	Path  string
@@ -113,11 +107,6 @@ CREATE TABLE IF NOT EXISTS hits (
 	proto TEXT NOT NULL,
 	count INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (path, proto)
-);
-CREATE TABLE IF NOT EXISTS now_posts (
-	id      INTEGER PRIMARY KEY,
-	content TEXT NOT NULL,
-	created INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS settings (
 	key   TEXT PRIMARY KEY,
@@ -283,6 +272,10 @@ type FeedSettings struct {
 	Subtitle string
 	Author   string
 	Limit    int
+	// HideFiles marks a stream: its pages are entries, not documents. They
+	// stay out of {{list}} and are collapsed in the admin, because nobody
+	// wants a wall of filenames for what are really just notes.
+	HideFiles bool
 }
 
 // ParseFeedMarker reads a .feed file: plain "key: value" lines, with # for
@@ -311,6 +304,8 @@ func ParseFeedMarker(content []byte) FeedSettings {
 			if n, err := strconv.Atoi(v); err == nil && n > 0 {
 				fs.Limit = n
 			}
+		case "hide_files":
+			fs.HideFiles = v == "true" || v == "yes" || v == "on"
 		}
 	}
 	return fs
@@ -330,13 +325,80 @@ func (s *Store) FeedInfo(folder string) FeedSettings {
 
 // DefaultFeedMarker renders a starting .feed file for a folder, prefilled
 // with the values in effect so they can simply be edited.
-func DefaultFeedMarker(title, author string, limit int) []byte {
+func DefaultFeedMarker(title, author string, limit int, hideFiles bool) []byte {
 	return []byte(fmt.Sprintf(`# Feed settings for this folder. Delete this file to stop publishing.
 title: %s
 subtitle:
 author: %s
 limit: %d
-`, title, author, limit))
+# hide_files: a stream of short notes rather than a list of documents
+hide_files: %t
+`, title, author, limit, hideFiles))
+}
+
+// HidesFiles reports whether a folder is a stream (see FeedSettings).
+func (s *Store) HidesFiles(folder string) bool {
+	return s.FeedInfo(folder).HideFiles
+}
+
+// StreamPages returns a folder's pages newest-first, for rendering a stream
+// of notes or picking the latest one.
+func (s *Store) StreamPages(folder string, limit int) []Page {
+	if !strings.HasSuffix(folder, "/") {
+		folder += "/"
+	}
+	metas, err := s.ListPrefix(folder)
+	if err != nil {
+		return nil
+	}
+	type dated struct {
+		m    Meta
+		date string
+	}
+	var items []dated
+	for _, m := range metas {
+		if m.Binary || Hidden(m.Path) || !strings.HasSuffix(m.Path, ".gmi") {
+			continue
+		}
+		if strings.HasSuffix(m.Path, "/index.gmi") {
+			continue
+		}
+		if strings.Contains(strings.TrimPrefix(m.Path, folder), "/") {
+			continue // direct children only
+		}
+		items = append(items, dated{m, s.EffectiveDate(m, true)})
+	}
+	// newest first, breaking ties on creation time so same-day notes order
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].date != items[j].date {
+			return items[i].date > items[j].date
+		}
+		return items[i].m.Created.After(items[j].m.Created)
+	})
+	if limit > 0 && len(items) > limit {
+		items = items[:limit]
+	}
+	out := make([]Page, 0, len(items))
+	for _, it := range items {
+		if pg, err := s.GetPage(it.m.Path); err == nil {
+			out = append(out, *pg)
+		}
+	}
+	return out
+}
+
+// NewStreamPath invents a filename for a note posted into a stream folder:
+// dated, unique, and sorting naturally.
+func (s *Store) NewStreamPath(folder string, now time.Time) string {
+	if !strings.HasSuffix(folder, "/") {
+		folder += "/"
+	}
+	base := folder + now.Format("2006-01-02-1504")
+	p := base + ".gmi"
+	for i := 2; s.PageExists(p); i++ {
+		p = fmt.Sprintf("%s-%d.gmi", base, i)
+	}
+	return p
 }
 
 // EffectiveDate is when a page happened, in priority order:
@@ -750,75 +812,24 @@ func (s *Store) Stats() ([]Hit, error) {
 	return out, rows.Err()
 }
 
-// ---- now posts ----------------------------------------------------------
-
-// AddNow appends a now micro-post.
-func (s *Store) AddNow(content string) (*NowPost, error) {
-	content = strings.TrimSpace(content)
-	if content == "" {
-		return nil, fmt.Errorf("empty now post")
-	}
-	now := time.Now()
-	res, err := s.db.Exec(`INSERT INTO now_posts (content, created) VALUES (?,?)`, content, now.Unix())
-	if err != nil {
-		return nil, err
-	}
-	id, _ := res.LastInsertId()
-	return &NowPost{ID: id, Content: content, Created: now}, nil
-}
-
-// ListNow returns now posts, newest first (limit 0 = all).
-func (s *Store) ListNow(limit int) ([]NowPost, error) {
-	q := `SELECT id, content, created FROM now_posts ORDER BY created DESC, id DESC`
-	var rows *sql.Rows
-	var err error
-	if limit > 0 {
-		rows, err = s.db.Query(q+` LIMIT ?`, limit)
-	} else {
-		rows, err = s.db.Query(q)
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []NowPost
-	for rows.Next() {
-		var n NowPost
-		var at int64
-		if err := rows.Scan(&n.ID, &n.Content, &at); err != nil {
-			return nil, err
-		}
-		n.Created = time.Unix(at, 0)
-		out = append(out, n)
-	}
-	return out, rows.Err()
-}
-
-// DeleteNow removes a now post.
-func (s *Store) DeleteNow(id int64) error {
-	res, err := s.db.Exec(`DELETE FROM now_posts WHERE id = ?`, id)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// CountVersions returns how many historical versions a path has.
-func (s *Store) CountVersions(p string) int64 {
-	var n int64
-	_ = s.db.QueryRow(`SELECT COUNT(*) FROM versions WHERE path = ?`, p).Scan(&n)
-	return n
-}
-
-// Totals returns overall row counts for status displays.
-func (s *Store) Totals() (pages, versions, nows int64) {
+// Totals returns overall counts for status displays: pages, stored
+// versions, and how many of those pages are dated (i.e. posts).
+func (s *Store) Totals() (pages, versions, posts int64) {
 	_ = s.db.QueryRow(`SELECT COUNT(*) FROM pages`).Scan(&pages)
 	_ = s.db.QueryRow(`SELECT COUNT(*) FROM versions`).Scan(&versions)
-	_ = s.db.QueryRow(`SELECT COUNT(*) FROM now_posts`).Scan(&nows)
+	_ = s.db.QueryRow(`SELECT COUNT(*) FROM pages WHERE date != ''`).Scan(&posts)
 	return
+}
+
+// CountVersions returns how many historical versions a page has.
+func (s *Store) CountVersions(p string) int64 {
+	cp, ok := CleanPath(p)
+	if !ok {
+		return 0
+	}
+	var n int64
+	_ = s.db.QueryRow(`SELECT COUNT(*) FROM versions WHERE path = ?`, cp).Scan(&n)
+	return n
 }
 
 // ---- settings -----------------------------------------------------------
@@ -896,7 +907,7 @@ func boolInt(b bool) int {
 func MimeFor(p string) string {
 	base := path.Base(p)
 	// special files are gemtext except .theme (CSS)
-	if base == ".theme" {
+	if base == ".css" || base == ".theme" {
 		return "text/css; charset=utf-8"
 	}
 	if strings.HasPrefix(base, ".") {

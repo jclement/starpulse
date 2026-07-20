@@ -195,33 +195,32 @@ func TestHits(t *testing.T) {
 	}
 }
 
-func TestNowPosts(t *testing.T) {
+func TestStreamPagesAndPaths(t *testing.T) {
 	st := openTest(t)
-	if _, err := st.AddNow("   "); err == nil {
-		t.Error("empty now post accepted")
+	_, _ = st.SavePage("/now/"+FeedMarker, DefaultFeedMarker("Now", "", 30, true), "", "t")
+	if !st.HidesFiles("/now/") {
+		t.Fatal("hide_files not parsed from the marker")
 	}
-	p1, err := st.AddNow("first!")
-	if err != nil {
-		t.Fatal(err)
+	p1 := st.NewStreamPath("/now/", time.Date(2026, 7, 20, 14, 23, 0, 0, time.UTC))
+	if p1 != "/now/2026-07-20-1423.gmi" {
+		t.Errorf("stream path = %q", p1)
 	}
-	if _, err := st.AddNow("second"); err != nil {
-		t.Fatal(err)
+	_, _ = st.SavePage(p1, []byte("first note"), "", "t")
+	// a second note in the same minute must not collide
+	p2 := st.NewStreamPath("/now/", time.Date(2026, 7, 20, 14, 23, 0, 0, time.UTC))
+	if p2 == p1 {
+		t.Fatal("stream paths collided")
 	}
-	posts, err := st.ListNow(0)
-	if err != nil || len(posts) != 2 {
-		t.Fatalf("list = %d,%v", len(posts), err)
+	_, _ = st.SavePage(p2, []byte("second note"), "", "t")
+	// index pages and the marker are not entries
+	_, _ = st.SavePage("/now/index.gmi", []byte("# Now"), "", "t")
+
+	pages := st.StreamPages("/now/", 0)
+	if len(pages) != 2 {
+		t.Fatalf("stream returned %d entries, want 2", len(pages))
 	}
-	if posts[0].Content != "second" {
-		t.Errorf("newest first violated: %+v", posts)
-	}
-	if got, _ := st.ListNow(1); len(got) != 1 {
-		t.Errorf("limit ignored")
-	}
-	if err := st.DeleteNow(p1.ID); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.DeleteNow(p1.ID); err != ErrNotFound {
-		t.Errorf("double delete: %v", err)
+	if got := st.StreamPages("/now/", 1); len(got) != 1 {
+		t.Errorf("limit ignored: %d", len(got))
 	}
 }
 
@@ -396,7 +395,7 @@ func TestFeedFoldersAndEffectiveDate(t *testing.T) {
 		t.Errorf("marker author/limit = %+v", fs)
 	}
 	// the generated default parses back to what it claims
-	def := ParseFeedMarker(DefaultFeedMarker("T", "A", 12))
+	def := ParseFeedMarker(DefaultFeedMarker("T", "A", 12, false))
 	if def.Title != "T" || def.Author != "A" || def.Limit != 12 {
 		t.Errorf("default marker round-trip = %+v", def)
 	}

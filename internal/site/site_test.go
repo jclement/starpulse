@@ -204,8 +204,9 @@ func TestCountDirectiveAndStats(t *testing.T) {
 
 func TestNowDirectiveAndAuthoredPage(t *testing.T) {
 	sy, st := testSite(t)
-	_, _ = st.AddNow("hello from now")
-	_, _ = st.AddNow("second update")
+	save(t, st, "/now/"+store.FeedMarker, string(store.DefaultFeedMarker("Now", "", 30, true)))
+	save(t, st, "/now/2026-07-19-0900.gmi", "hello from now")
+	save(t, st, "/now/2026-07-20-0900.gmi", "second update")
 
 	save(t, st, "/index.gmi", "# Home\n\n{{now 1}}")
 	g := sy.Resolve("/", "").Page.Gemtext
@@ -213,17 +214,13 @@ func TestNowDirectiveAndAuthoredPage(t *testing.T) {
 		t.Errorf("now limit wrong:\n%s", g)
 	}
 
-	// no built-in /now — it 404s until the author makes one
-	if r := sy.Resolve("/now", ""); r.Type != NotFound {
-		t.Fatalf("/now without a page: %+v", r)
-	}
-	save(t, st, "/now.gmi", "# My Now\n\n{{now 0}}")
-	r := sy.Resolve("/now", "")
+	save(t, st, "/now/index.gmi", "# My Now\n\n{{now 0}}")
+	r := sy.Resolve("/now/", "")
 	if r.Type != PageResult || r.Page.Title != "My Now" {
 		t.Fatalf("authored /now: %+v", r)
 	}
 	if !strings.Contains(r.Page.Gemtext, "hello from now") || !strings.Contains(r.Page.Gemtext, "second update") {
-		t.Errorf("authored /now missing posts:\n%s", r.Page.Gemtext)
+		t.Errorf("authored /now missing notes:\n%s", r.Page.Gemtext)
 	}
 }
 
@@ -256,37 +253,43 @@ func timeNowDate() string {
 	return time.Now().Format("2006-01-02")
 }
 
-func TestLatestNowAndTimezone(t *testing.T) {
+// {{latest}} generalises to any folder, and picks out one part of the entry.
+func TestLatestDirective(t *testing.T) {
 	sy, st := testSite(t)
-	// empty state renders empty tokens, not errors
 	save(t, st, "/a.gmi", "# A\n\nlatest: {{latest_now}} on {{latest_now_date}}!")
 	g := sy.Resolve("/a", "").Page.Gemtext
 	if !strings.Contains(g, "latest:  on !") {
-		t.Errorf("empty latest_now wrong:\n%s", g)
+		t.Errorf("empty stream should render empty, not error:\n%s", g)
 	}
 
-	_, _ = st.AddNow("older post")
-	post, _ := st.AddNow("the newest post")
-
-	// fixed zone far from UTC to prove conversion happens
-	loc := time.FixedZone("TEST", -7*3600)
-	sy.Loc = loc
+	save(t, st, "/now/"+store.FeedMarker, string(store.DefaultFeedMarker("Now", "", 30, true)))
+	save(t, st, "/now/2026-07-19-0900.gmi", "older note")
+	save(t, st, "/now/2026-07-20-0900.gmi", "# Newest\n\nthe newest note")
 
 	g = sy.Resolve("/a", "").Page.Gemtext
-	wantDate := post.Created.In(loc).Format("2006-01-02")
-	if !strings.Contains(g, "latest: the newest post on "+wantDate+"!") {
-		t.Errorf("latest_now wrong (want date %s):\n%s", wantDate, g)
+	if !strings.Contains(g, "latest: the newest note on 2026-07-20!") {
+		t.Errorf("latest_now wrong:\n%s", g)
 	}
-	if strings.Contains(g, "older post") {
-		t.Errorf("latest_now leaked older post:\n%s", g)
+	if strings.Contains(g, "older note") {
+		t.Errorf("latest leaked an older entry:\n%s", g)
 	}
 
-	// {{now}} listing uses the same zone
-	save(t, st, "/b.gmi", "# B\n\n{{now 1}}")
+	// the general form works on any folder, and can pick a part
+	save(t, st, "/posts/"+store.FeedMarker, "title: Posts\n")
+	save(t, st, "/posts/2026-07-21-hello.gmi", "# Hello There\n\nthe body")
+	save(t, st, "/b.gmi", "T={{latest /posts title}} D={{latest /posts date}}\n{{latest /posts link}}")
 	g = sy.Resolve("/b", "").Page.Gemtext
-	wantStamp := post.Created.In(loc).Format("2006-01-02 15:04")
-	if !strings.Contains(g, wantStamp) {
-		t.Errorf("now listing not in configured zone (want %s):\n%s", wantStamp, g)
+	for _, want := range []string{"T=Hello There", "D=2026-07-21", "=> /posts/2026-07-21-hello Hello There"} {
+		if !strings.Contains(g, want) {
+			t.Errorf("latest part missing %q:\n%s", want, g)
+		}
+	}
+
+	// {{stream}} renders bodies newest-first for any folder
+	save(t, st, "/c.gmi", "{{stream /now 1}}")
+	g = sy.Resolve("/c", "").Page.Gemtext
+	if !strings.Contains(g, "the newest note") || strings.Contains(g, "older note") {
+		t.Errorf("stream wrong:\n%s", g)
 	}
 }
 

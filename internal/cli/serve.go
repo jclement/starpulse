@@ -69,6 +69,7 @@ func Serve(cfg *config.Config, logger *log.Logger) error {
 	if loc, err := cfg.Location(); err == nil {
 		sy.Loc = loc
 	}
+	sy.NowFolder = cfg.NowFolder
 
 	// hidden service: managed tor, or an externally-managed onion hostname
 	var torMgr *tor.Manager

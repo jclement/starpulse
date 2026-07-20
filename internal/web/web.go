@@ -113,6 +113,28 @@ func (s *Server) authGate() *authThrottle {
 	return s.throttle
 }
 
+// nowFolder is where short notes live.
+func (s *Server) nowFolder() string {
+	f := s.Cfg.NowFolder
+	if f == "" {
+		f = "/now/"
+	}
+	if !strings.HasSuffix(f, "/") {
+		f += "/"
+	}
+	return f
+}
+
+// ensureStream marks a folder as a hidden-file stream the first time a note
+// lands in it, so notes never leak into listings.
+func (s *Server) ensureStream(folder string) {
+	if s.Store.IsFeedFolder(folder) {
+		return
+	}
+	marker := store.DefaultFeedMarker("Now", s.Cfg.Feeds.Author, 30, true)
+	_, _ = s.Store.SavePage(folder+store.FeedMarker, marker, "", "auto")
+}
+
 func (s *Server) loc() *time.Location {
 	if s.Loc != nil {
 		return s.Loc

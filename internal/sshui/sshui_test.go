@@ -268,10 +268,14 @@ func TestAdminEditAndNow(t *testing.T) {
 	ts.expect("new now post")
 	ts.send("posted from the terminal")
 	ts.send("\x13")
-	ts.expect("now post published")
-	posts, _ := st.ListNow(0)
-	if len(posts) != 1 || posts[0].Content != "posted from the terminal" {
-		t.Errorf("now posts = %+v", posts)
+	ts.expect("note published")
+	// a note is a page in the stream folder, marked so it stays out of lists
+	notes := st.StreamPages("/now/", 0)
+	if len(notes) != 1 || !strings.Contains(string(notes[0].Content), "posted from the terminal") {
+		t.Errorf("notes = %+v", notes)
+	}
+	if !st.HidesFiles("/now/") {
+		t.Error("note folder should have been marked as a stream")
 	}
 
 	ts.send("q")

@@ -49,12 +49,7 @@ type entry struct {
 
 // Build renders one feed as an Atom document.
 func (b *Builder) Build(f config.Feed, baseURL string) string {
-	var entries []entry
-	if f.IsNow() {
-		entries = b.nowEntries(f, baseURL)
-	} else {
-		entries = b.pageEntries(f, baseURL)
-	}
+	entries := b.pageEntries(f, baseURL)
 
 	limit := f.Limit
 	if limit <= 0 {
@@ -158,17 +153,14 @@ func (b *Builder) pageEntries(f config.Feed, baseURL string) []entry {
 			continue
 		}
 		url := baseURL + PageURL(m.Path)
-		title := m.Title
-		if title == "" {
-			title = m.Path
-		}
+		title, summary := b.titleAndSummary(m)
 		e := entry{
 			title:     title,
 			id:        url,
 			link:      url,
 			published: published,
 			updated:   m.Updated,
-			summary:   b.summarize(m.Path),
+			summary:   summary,
 		}
 		// a page edited before its own date (imported content) reads oddly
 		if e.updated.Before(published) {
@@ -180,64 +172,81 @@ func (b *Builder) pageEntries(f config.Feed, baseURL string) []entry {
 	return out
 }
 
-// nowEntries turns now-posts into feed items. They have no page of their own,
-// so they get tag: ids and link at the feed's page.
-func (b *Builder) nowEntries(f config.Feed, baseURL string) []entry {
-	limit := f.Limit
-	if limit <= 0 {
-		limit = 30
-	}
-	posts, err := b.Store.ListNow(limit)
+// titleAndSummary derives an entry's title and excerpt from a page.
+//
+// A document leads with a heading, which becomes the title and is then left
+// out of the summary. A short note has no heading at all — its first line is
+// the note — so it supplies the title and the text stays whole. Getting this
+// wrong swallows notes entirely, which is exactly what it used to do.
+func (b *Builder) titleAndSummary(m store.Meta) (string, string) {
+	pg, err := b.Store.GetPage(m.Path)
 	if err != nil {
-		return nil
+		return fallbackTitle(m), ""
 	}
-	link := ""
-	if f.Page != "" {
-		link = baseURL + f.Page
+	// work from the raw gemtext: PlainText has already stripped the "#", so
+	// a heading is indistinguishable from a first line by then
+	raw := strings.TrimSpace(stripFrontMatter(string(pg.Content)))
+	if raw == "" {
+		return fallbackTitle(m), ""
 	}
-	var out []entry
-	for _, p := range posts {
-		text := strings.TrimSpace(p.Content)
-		out = append(out, entry{
-			title:     firstLine(text, 70),
-			id:        fmt.Sprintf("tag:%s,%s:now/%d", b.Hostname, p.Created.In(b.loc()).Format("2006-01-02"), p.ID),
-			link:      link,
-			published: p.Created,
-			updated:   p.Created,
-			summary:   text,
-		})
+	lines := strings.Split(raw, "\n")
+	i := 0
+	for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
+		i++
 	}
-	return out
+	if i == len(lines) {
+		return fallbackTitle(m), ""
+	}
+	first := strings.TrimSpace(lines[i])
+
+	title := m.Title
+	body := lines[i:]
+	if strings.HasPrefix(first, "#") {
+		// a document: the heading is the title, so leave it out of the summary
+		if title == "" {
+			title = strings.TrimSpace(strings.TrimLeft(first, "# "))
+		}
+		body = lines[i+1:]
+	} else if title == "" || title == stem(m.Path) {
+		// a note: its opening line names it, and stays in the body
+		title = truncate(first, 70)
+	}
+
+	summary := strings.TrimSpace(gemtext.PlainText(strings.Join(body, "\n")))
+	return title, truncate(strings.Join(strings.Fields(summary), " "), 300)
 }
 
-// summarize returns a short plain-text excerpt of a page.
-func (b *Builder) summarize(path string) string {
-	pg, err := b.Store.GetPage(path)
-	if err != nil {
-		return ""
+// stripFrontMatter drops a leading --- ... --- block.
+func stripFrontMatter(src string) string {
+	if !strings.HasPrefix(src, "---\n") && !strings.HasPrefix(src, "---\r\n") {
+		return src
 	}
-	text := gemtext.PlainText(string(pg.Content))
-	// drop the leading heading — it is already the entry title
-	lines := strings.Split(text, "\n")
-	var keep []string
-	for i, l := range lines {
-		l = strings.TrimSpace(l)
-		if l == "" {
-			continue
-		}
-		if i == 0 && len(keep) == 0 {
-			continue
-		}
-		keep = append(keep, l)
-		if len(strings.Join(keep, " ")) > 300 {
-			break
-		}
+	rest := src[strings.Index(src, "\n")+1:]
+	end := strings.Index(rest, "\n---")
+	if end < 0 {
+		return src
 	}
-	out := strings.Join(keep, " ")
-	if len(out) > 300 {
-		out = strings.TrimSpace(out[:300]) + "…"
+	return strings.TrimLeft(rest[end+4:], "\r\n")
+}
+
+func fallbackTitle(m store.Meta) string {
+	if m.Title != "" {
+		return m.Title
 	}
-	return out
+	return m.Path
+}
+
+func stem(p string) string {
+	base := p[strings.LastIndexByte(p, '/')+1:]
+	return strings.TrimSuffix(base, ".gmi")
+}
+
+func truncate(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return strings.TrimSpace(string(r[:max])) + "…"
 }
 
 func firstLine(s string, max int) string {

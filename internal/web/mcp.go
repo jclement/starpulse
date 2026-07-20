@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/jclement/starpulse/internal/store"
 )
@@ -262,18 +264,34 @@ func (s *Server) mcpToolCall(params json.RawMessage) map[string]any {
 		return toolJSON(hits)
 
 	case "post_now":
-		post, err := s.Store.AddNow(a.Content)
+		text := strings.TrimSpace(a.Content)
+		if text == "" {
+			return toolErr("empty note")
+		}
+		path := s.Store.NewStreamPath(s.nowFolder(), time.Now().In(s.loc()))
+		pg, err := s.Store.SavePage(path, []byte(text+"\n"), "", "mcp note")
 		if err != nil {
 			return toolErr(err.Error())
 		}
-		return toolText(fmt.Sprintf("posted now #%d at %s", post.ID, post.Created.Format("2006-01-02 15:04")))
+		s.ensureStream(s.nowFolder())
+		return toolText("posted note " + pg.Path)
 
 	case "list_now":
-		posts, err := s.Store.ListNow(a.Limit)
-		if err != nil {
-			return toolErr(err.Error())
+		pages := s.Store.StreamPages(s.nowFolder(), a.Limit)
+		type row struct {
+			Path    string `json:"path"`
+			Date    string `json:"date"`
+			Content string `json:"content"`
 		}
-		return toolJSON(posts)
+		rows := make([]row, 0, len(pages))
+		for _, p := range pages {
+			d := p.Date
+			if d == "" {
+				d = p.Created.In(s.loc()).Format("2006-01-02")
+			}
+			rows = append(rows, row{p.Path, d, string(p.Content)})
+		}
+		return toolJSON(rows)
 
 	case "list_versions":
 		versions, err := s.Store.ListVersions(a.Path)

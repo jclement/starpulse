@@ -336,8 +336,13 @@ func titanTarget(st *store.Store, rawPath string) string {
 	if rawPath == "" {
 		rawPath = "/"
 	}
-	// bare root or trailing-slash directory → its index page
 	if rawPath == "/" || strings.HasSuffix(rawPath, "/") {
+		// uploading to a STREAM folder posts a new note, because that is the
+		// only sensible reading of "here is another short thing for /now/".
+		// Everywhere else a folder target means its index page.
+		if rawPath != "/" && st.HidesFiles(rawPath) {
+			return st.NewStreamPath(rawPath, time.Now())
+		}
 		idx := strings.TrimSuffix(rawPath, "/") + "/index.gmi"
 		if cp, ok := store.CleanPath(idx); ok {
 			return cp

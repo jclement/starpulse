@@ -79,30 +79,32 @@ func TestSiteWideFeedAndLimit(t *testing.T) {
 	}
 }
 
-func TestNowFeed(t *testing.T) {
+// A notes stream is just a feed folder: its entries are pages like any
+// other, so it feeds without any special casing.
+func TestNoteStreamFeed(t *testing.T) {
 	st := testStore(t)
-	_, _ = st.AddNow("first update")
-	_, _ = st.AddNow("a longer second update\nwith a second line that should not be in the title")
+	_, _ = st.SavePage("/now/"+store.FeedMarker,
+		store.DefaultFeedMarker("Now", "Jeff", 30, true), "", "t")
+	_, _ = st.SavePage(st.NewStreamPath("/now/", time.Date(2026, 7, 19, 9, 0, 0, 0, time.UTC)),
+		[]byte("first update"), "", "t")
+	_, _ = st.SavePage(st.NewStreamPath("/now/", time.Date(2026, 7, 20, 9, 0, 0, 0, time.UTC)),
+		[]byte("a longer second update"), "", "t")
 
+	c := config.Default()
+	c.Hostname = "ex.example"
+	f, ok := Resolve(c, st, "/now/feed.xml")
+	if !ok {
+		t.Fatal("notes folder does not publish")
+	}
 	b := &Builder{Store: st, Hostname: "ex.example", Loc: time.UTC}
-	out := b.Build(config.Feed{Path: "/now/feed.xml", Source: "now", Page: "/now",
-		Title: "now", Limit: 30}, "https://ex.example")
-
-	if !strings.Contains(out, "<title>a longer second update</title>") {
-		t.Errorf("now title should be the first line:\n%s", out)
-	}
-	if !strings.Contains(out, "with a second line") {
-		t.Error("now summary should carry the full text")
-	}
-	// stable tag: ids, and a link to the human page
-	if !strings.Contains(out, "<id>tag:ex.example,") {
-		t.Errorf("now entries need tag ids:\n%s", out)
-	}
-	if !strings.Contains(out, `href="https://ex.example/now"`) {
-		t.Error("now entries should link to the configured page")
-	}
+	out := b.Build(f, "https://ex.example")
 	if n := strings.Count(out, "<entry>"); n != 2 {
-		t.Errorf("entries = %d, want 2", n)
+		t.Errorf("entries = %d, want 2:\n%s", n, out)
+	}
+	for _, want := range []string{"first update", "a longer second update", "<title>Now</title>"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("notes feed missing %q", want)
+		}
 	}
 }
 
@@ -119,7 +121,7 @@ func TestEffectiveFeedsDefaults(t *testing.T) {
 		Limit:  10,
 		List: []config.Feed{
 			{Path: "posts/feed.xml", Source: "/posts/"}, // leading slash added
-			{Path: "/now/feed.xml", Source: "now"},
+			{Path: "/notes/feed.xml", Source: "/notes/"},
 			{Source: "/orphan/"}, // no path: dropped
 		},
 	}
@@ -136,11 +138,8 @@ func TestEffectiveFeedsDefaults(t *testing.T) {
 	if fs[0].Limit != 10 {
 		t.Errorf("global limit not inherited: %d", fs[0].Limit)
 	}
-	if !fs[1].IsNow() {
-		t.Error("now feed not detected")
-	}
-	if fs[1].Page != "/" {
-		t.Errorf("now page default = %q", fs[1].Page)
+	if fs[1].Page != "/notes/" {
+		t.Errorf("page should default to source: %q", fs[1].Page)
 	}
 }
 
@@ -295,25 +294,5 @@ func TestFeedFolderCleanNames(t *testing.T) {
 	}
 	if !strings.Contains(out, "<author><name>Jeff</name></author>") {
 		t.Error("per-folder author not applied")
-	}
-}
-
-func TestNowFeedIsOptIn(t *testing.T) {
-	c := config.Default()
-	c.Hostname = "ex.example"
-	// off by default, like every other feed
-	for _, f := range c.EffectiveFeeds() {
-		if f.IsNow() {
-			t.Fatal("now feed published without being asked for")
-		}
-	}
-	c.Feeds.Now = config.NowFeed{Enabled: true, Title: "Now"}
-	fs := c.EffectiveFeeds()
-	if len(fs) != 1 || !fs[0].IsNow() {
-		t.Fatalf("now feed not published: %+v", fs)
-	}
-	// sensible defaults filled in
-	if fs[0].Path != "/now/feed.xml" || fs[0].Page != "/now" {
-		t.Errorf("now feed defaults = %+v", fs[0])
 	}
 }

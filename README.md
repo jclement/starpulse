@@ -93,8 +93,8 @@ starpulse version
 - **Full-text search** (SQLite FTS5) on the web, over gemini, and in the TUI.
 - **Per-door statistics**: which pages, and whether they were read over http,
   gemini, ssh, telnet or tor.
-- **Now-posts**: short timestamped updates, posted from anywhere, rendered
-  wherever you put `{{now}}`.
+- **Notes**: short entries — ordinary pages in a stream folder, so they get
+  history, search and feeds like everything else, without cluttering listings.
 - **Syntax highlighting** for code blocks, rendered server-side.
 - **Automatic HTTPS**, and a **self-managed tor hidden service** forwarding
   every door you enable.
@@ -166,7 +166,7 @@ automatically, so you cannot accidentally create an unviewable file.
 | file | what it does |
 |---|---|
 | `.header` / `.footer` | gemtext wrapped above/below every page in that folder and below |
-| `.theme` | CSS applied to that folder and below (created prefilled with the site's own colour variables) |
+| `.css` | CSS applied to that folder and below (created prefilled with the site's own colour variables) |
 | `.feed` | marks the folder as publishing a feed, and configures it |
 
 **Directives**, expanded when a page is served:
@@ -175,8 +175,9 @@ automatically, so you cannot accidentally create an unviewable file.
 |---|---|
 | `{{list [folder] [limit]}}` | link list of a folder's pages |
 | `{{include /path}}` | another page's content, inline |
-| `{{now [limit]}}` | your latest now-posts |
-| `{{latest_now}}` / `{{latest_now_date}}` | just the newest now-post's text / date |
+| `{{stream [folder] [limit]}}` | a folder's entries in full, newest first |
+| `{{latest [folder] [body\|link\|title\|date]}}` | one part of a folder's newest entry |
+| `{{now [limit]}}` / `{{latest_now}}` | the same, for the configured notes folder |
 | `{{random /path}}` | one random line from a file |
 | `{{count}}` | this page's view counter |
 | `{{rev}}` | this page's revision number |
@@ -210,6 +211,18 @@ post's date is resolved in order:
 Outside a feed folder only the first two count, so ordinary pages stay undated
 and list alphabetically. Feeds are served over HTTP *and* gemini, and each is
 advertised in the HTML `<head>`.
+
+Add `hide_files: true` to a `.feed` and the folder becomes a **stream**: its
+pages are short notes rather than documents, so they stay out of `{{list}}`
+and collapse in the admin. That is all a "now" page is — a gemlog without the
+file details. `{{now}}` and the *+ note* button write into the folder named by
+`now_folder`, and posting one over titan is just uploading to the folder
+itself:
+
+```sh
+# in Lagrange: navigate to gemini://example.org/now/ and upload
+titan://example.org/now/;mime=text/plain;size=N
+```
 
 On gemini the idiomatic feed is just a page of dated link lines — which
 `{{list}}` already emits, so a folder index is subscribable in Lagrange or

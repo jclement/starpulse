@@ -356,3 +356,48 @@ func TestTitanDisabled(t *testing.T) {
 		t.Errorf("titan disabled: %q", resp)
 	}
 }
+
+// Posting a note over titan: upload to the stream folder itself and each
+// upload becomes a new dated entry instead of overwriting an index.
+func TestTitanPostsNotesToStreamFolder(t *testing.T) {
+	ts := startServer(t)
+	marker := store.DefaultFeedMarker("Now", "Jeff", 30, true)
+	_, _ = ts.st.SavePage("/now/"+store.FeedMarker, marker, "", "seed")
+
+	post := func(body string) string {
+		req := fmt.Sprintf("titan://localhost/now/;mime=text/plain;size=%d", len(body))
+		resp := ts.request(t, req, &ts.client, []byte(body))
+		if !strings.HasPrefix(resp, "30 ") {
+			t.Fatalf("note upload: %q", resp)
+		}
+		return resp
+	}
+	post("a first note")
+	post("a second note")
+
+	pages := ts.st.StreamPages("/now/", 0)
+	if len(pages) != 2 {
+		t.Fatalf("expected 2 notes, got %d", len(pages))
+	}
+	// neither overwrote an index page
+	if _, err := ts.st.GetPage("/now/index.gmi"); err == nil {
+		t.Error("note upload clobbered the folder index")
+	}
+	bodies := string(pages[0].Content) + string(pages[1].Content)
+	for _, want := range []string{"a first note", "a second note"} {
+		if !strings.Contains(bodies, want) {
+			t.Errorf("note %q not stored", want)
+		}
+	}
+
+	// an ordinary folder still edits its index
+	_, _ = ts.st.SavePage("/posts/2026-01-01-x.gmi", []byte("# X"), "", "seed")
+	body := "# Posts Index"
+	req := fmt.Sprintf("titan://localhost/posts/;mime=text/plain;size=%d", len(body))
+	if resp := ts.request(t, req, &ts.client, []byte(body)); !strings.HasPrefix(resp, "30 ") {
+		t.Fatalf("index upload: %q", resp)
+	}
+	if pg, err := ts.st.GetPage("/posts/index.gmi"); err != nil || string(pg.Content) != body {
+		t.Error("ordinary folder upload should edit its index")
+	}
+}

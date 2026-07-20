@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/log"
 
@@ -43,6 +44,23 @@ func testServer(t *testing.T) (*Server, *store.Store, *httptest.Server) {
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	return srv, st, ts
+}
+
+// postNote writes a short note the way the app does: a page in a stream
+// folder, marked so its entries stay out of listings.
+func postNote(t *testing.T, st *store.Store, folder, body string) string {
+	t.Helper()
+	if !st.IsFeedFolder(folder) {
+		if _, err := st.SavePage(folder+store.FeedMarker,
+			store.DefaultFeedMarker("Now", "", 30, true), "", "t"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p := st.NewStreamPath(folder, time.Now())
+	if _, err := st.SavePage(p, []byte(body+"\n"), "", "t"); err != nil {
+		t.Fatal(err)
+	}
+	return p
 }
 
 func get(t *testing.T, ts *httptest.Server, path string) (int, string) {
@@ -420,7 +438,7 @@ func TestConfiguredFeeds(t *testing.T) {
 		Author: "Jeff",
 		List: []config.Feed{
 			{Path: "/posts/feed.xml", Source: "/posts/", Title: "gemlog"},
-			{Path: "/now/feed.xml", Source: "now", Page: "/now", Title: "now"},
+			{Path: "/notes/feed.xml", Source: "/notes/", Title: "notes"},
 		},
 	}
 	ts2 := httptest.NewServer(srv.Handler())
@@ -428,7 +446,7 @@ func TestConfiguredFeeds(t *testing.T) {
 
 	_, _ = st.SavePage("/posts/2026-07-19-hello.gmi", []byte("# Hello World\n\nbody"), "", "t")
 	_, _ = st.SavePage("/elsewhere/2026-07-19-other.gmi", []byte("# Other"), "", "t")
-	_, _ = st.AddNow("a now update")
+	postNote(t, st, "/notes/", "a now update")
 
 	code, posts := get(t, ts2, "/posts/feed.xml")
 	if code != 200 || !strings.Contains(posts, "Hello World") {
@@ -441,17 +459,17 @@ func TestConfiguredFeeds(t *testing.T) {
 		t.Error("configured author missing")
 	}
 
-	code, now := get(t, ts2, "/now/feed.xml")
+	code, now := get(t, ts2, "/notes/feed.xml")
 	if code != 200 || !strings.Contains(now, "a now update") {
-		t.Fatalf("now feed: %d\n%s", code, now)
+		t.Fatalf("notes feed: %d\n%s", code, now)
 	}
 	if strings.Contains(now, "Hello World") {
-		t.Error("now feed contains pages")
+		t.Error("notes feed contains other folders' pages")
 	}
 
 	// both feeds are advertised for discovery in the HTML head
 	_, home := get(t, ts2, "/")
-	for _, want := range []string{`href="/posts/feed.xml"`, `href="/now/feed.xml"`} {
+	for _, want := range []string{`href="/posts/feed.xml"`, `href="/notes/feed.xml"`} {
 		if !strings.Contains(home, want) {
 			t.Errorf("feed not advertised in <head>: %s", want)
 		}

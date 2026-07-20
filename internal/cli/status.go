@@ -50,7 +50,7 @@ func Status(cfg *config.Config) error {
 	defer st.Close()
 
 	pages, versions, nows := st.Totals()
-	fmt.Printf("  database  %s %s(%s · %d pages · %d versions · %d now posts)%s\n",
+	fmt.Printf("  database  %s %s(%s · %d pages · %d versions · %d dated posts)%s\n",
 		dbPath, cDim, human(fi.Size()), pages, versions, nows, cReset)
 
 	doors := []string{}

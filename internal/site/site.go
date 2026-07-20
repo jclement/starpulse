@@ -55,6 +55,19 @@ type Site struct {
 	Store *store.Store
 	// Loc is the timezone for displayed timestamps (nil = server local).
 	Loc *time.Location
+	// NowFolder is the stream {{now}} and {{latest_now}} read from.
+	NowFolder string
+}
+
+func (s *Site) nowFolder() string {
+	if s.NowFolder == "" {
+		return "/now/"
+	}
+	f := s.NowFolder
+	if !strings.HasSuffix(f, "/") {
+		f += "/"
+	}
+	return f
 }
 
 // New creates a Site.
@@ -230,7 +243,7 @@ func (s *Site) pageResult(urlPath string, pg *store.Page, proto string) *Result 
 		SourcePath: pg.Path,
 		Title:      title,
 		Gemtext:    joinChunks(parts),
-		Theme:      s.nearestSpecial(pg.Path, ".theme"),
+		Theme:      s.themeFor(pg.Path),
 	}}
 }
 
@@ -275,6 +288,14 @@ func (s *Site) nearestSpecial(pagePath, name string) string {
 	}
 }
 
+// themeFor finds the nearest stylesheet: ".css", or the older ".theme".
+func (s *Site) themeFor(pagePath string) string {
+	if css := s.nearestSpecial(pagePath, ".css"); css != "" {
+		return css
+	}
+	return s.nearestSpecial(pagePath, ".theme")
+}
+
 // syntheticListing renders a directory with no index.gmi as a listing page.
 func (s *Site) syntheticListing(dir, proto string) *Result {
 	if proto != "" {
@@ -299,13 +320,16 @@ func (s *Site) syntheticListing(dir, proto string) *Result {
 		URLPath: dir,
 		Title:   name,
 		Gemtext: joinChunks(parts),
-		Theme:   s.nearestSpecial(anchor, ".theme"),
+		Theme:   s.themeFor(anchor),
 	}}
 }
 
 // ---- directives ---------------------------------------------------------
 
-var lineDirectiveRe = regexp.MustCompile(`(?m)^\{\{\s*(list|index|include|random|now)(?:\s+([^\s}]+))?(?:\s+(\d+))?\s*\}\}\s*$`)
+var lineDirectiveRe = regexp.MustCompile(`(?m)^\{\{\s*(list|index|include|random|now|stream)(?:\s+([^\s}]+))?(?:\s+(\d+))?\s*\}\}\s*$`)
+
+// {{latest [folder] [part]}} works inline, anywhere in a line.
+var latestRe = regexp.MustCompile(`\{\{\s*latest(?:\s+([^\s}]+))?(?:\s+(body|link|title|date))?\s*\}\}`)
 
 const maxIncludeDepth = 4
 
@@ -333,15 +357,25 @@ func (s *Site) expand(body, baseDir string, ctx expandCtx, depth int) string {
 	if strings.Contains(body, "{{count}}") {
 		body = strings.ReplaceAll(body, "{{count}}", fmt.Sprintf("%d", s.Store.Count(canonicalKey(ctx.urlPath))))
 	}
+	// {{latest_now}} / {{latest_now_date}} are the now-folder shorthands
 	if strings.Contains(body, "{{latest_now") {
-		post := s.latestNow()
-		content, date := "", ""
-		if post != nil {
-			content = strings.TrimSpace(post.Content)
-			date = post.Created.In(s.loc()).Format("2006-01-02")
-		}
-		body = strings.ReplaceAll(body, "{{latest_now_date}}", date)
-		body = strings.ReplaceAll(body, "{{latest_now}}", content)
+		body = strings.ReplaceAll(body, "{{latest_now_date}}", s.latest(s.nowFolder(), "date"))
+		body = strings.ReplaceAll(body, "{{latest_now}}", s.latest(s.nowFolder(), "body"))
+	}
+	if strings.Contains(body, "{{latest") {
+		body = latestRe.ReplaceAllStringFunc(body, func(m string) string {
+			g := latestRe.FindStringSubmatch(m)
+			folder, part := g[1], g[2]
+			if folder == "" {
+				folder = s.nowFolder()
+			} else if !strings.HasPrefix(folder, "/") {
+				folder = resolveRef(baseDir, folder) + "/"
+			}
+			if part == "" {
+				part = "body"
+			}
+			return s.latest(folder, part)
+		})
 	}
 
 	return lineDirectiveRe.ReplaceAllStringFunc(body, func(m string) string {
@@ -396,7 +430,13 @@ func (s *Site) expand(body, baseDir string, ctx expandCtx, depth int) string {
 			if numStr == "" {
 				num = 5
 			}
-			return s.renderNow(num)
+			return s.renderStream(s.nowFolder(), num)
+		case "stream":
+			folder := s.nowFolder()
+			if arg != "" {
+				folder = resolveRef(baseDir, arg) + "/"
+			}
+			return s.renderStream(folder, num)
 		}
 		return m
 	})
@@ -421,13 +461,47 @@ func (s *Site) updatedString(ctx expandCtx) string {
 	return "recently"
 }
 
-// latestNow returns the newest now-post, or nil.
-func (s *Site) latestNow() *store.NowPost {
-	posts, err := s.Store.ListNow(1)
-	if err != nil || len(posts) == 0 {
-		return nil
+// latest renders one part of a folder's newest entry.
+func (s *Site) latest(folder, part string) string {
+	pages := s.Store.StreamPages(folder, 1)
+	if len(pages) == 0 {
+		return ""
 	}
-	return &posts[0]
+	pg := pages[0]
+	body, fm := stripFrontMatter(string(pg.Content))
+	switch part {
+	case "date":
+		if fm.Date != "" {
+			return fm.Date
+		}
+		if pg.Date != "" {
+			return pg.Date
+		}
+		return pg.Created.In(s.loc()).Format("2006-01-02")
+	case "title":
+		if fm.Title != "" {
+			return fm.Title
+		}
+		return pg.Title
+	case "link":
+		title := fm.Title
+		if title == "" {
+			title = pg.Title
+		}
+		return "=> " + strings.TrimSuffix(pg.Path, ".gmi") + " " + title
+	default: // body
+		return strings.TrimSpace(stripHeading(body))
+	}
+}
+
+// stripHeading drops a leading "# ..." line — for a note, the heading is
+// usually the note itself, and repeating it reads oddly inline.
+func stripHeading(body string) string {
+	lines := strings.Split(strings.TrimSpace(body), "\n")
+	if len(lines) > 0 && strings.HasPrefix(lines[0], "#") {
+		return strings.Join(lines[1:], "\n")
+	}
+	return body
 }
 
 // revString renders {{rev}}: the served page's revision number (saved
@@ -463,6 +537,10 @@ func (s *Site) List(urlDir string) []Entry {
 		return nil
 	}
 	inFeedFolder := dir != "" && s.Store.IsFeedFolder(prefix)
+	// a stream's entries are notes, not documents: never list them
+	if dir != "" && s.Store.HidesFiles(prefix) {
+		return nil
+	}
 	var out []Entry
 	seenDirs := map[string]bool{}
 	for _, m := range metas {
@@ -546,18 +624,27 @@ func (s *Site) renderList(urlDir string, limit int) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// renderNow renders the latest now posts as gemtext (limit 0 = all).
-func (s *Site) renderNow(limit int) string {
-	posts, err := s.Store.ListNow(limit)
-	if err != nil || len(posts) == 0 {
+// renderStream renders a folder's entries newest-first, bodies and all —
+// the shape a stream of short notes wants (limit 0 = all).
+func (s *Site) renderStream(folder string, limit int) string {
+	pages := s.Store.StreamPages(folder, limit)
+	if len(pages) == 0 {
 		return "(nothing yet)"
 	}
 	var b strings.Builder
-	for i, p := range posts {
+	for i, pg := range pages {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		fmt.Fprintf(&b, "### %s\n\n%s\n", p.Created.In(s.loc()).Format("2006-01-02 15:04"), strings.TrimSpace(p.Content))
+		body, fm := stripFrontMatter(string(pg.Content))
+		when := fm.Date
+		if when == "" {
+			when = pg.Date
+		}
+		if when == "" {
+			when = pg.Created.In(s.loc()).Format("2006-01-02 15:04")
+		}
+		fmt.Fprintf(&b, "### %s\n\n%s\n", when, strings.TrimSpace(body))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

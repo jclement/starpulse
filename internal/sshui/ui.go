@@ -3,6 +3,7 @@ package sshui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -35,13 +36,14 @@ const (
 
 // model is the SSH TUI: a gemini browser, plus editing when admin.
 type model struct {
-	site     *site.Site
-	store    *store.Store
-	hostname string
-	admin    bool
-	proto    string // stats bucket: "ssh" or "telnet"
-	renderer *lipgloss.Renderer
-	st       *styles
+	site      *site.Site
+	store     *store.Store
+	hostname  string
+	admin     bool
+	proto     string // stats bucket: "ssh" or "telnet"
+	nowFolder string
+	renderer  *lipgloss.Renderer
+	st        *styles
 
 	width, height int
 	mode          mode
@@ -92,16 +94,17 @@ func newProtoModel(sy *site.Site, st *store.Store, hostname string, admin bool, 
 		renderer = lipgloss.DefaultRenderer()
 	}
 	m := &model{
-		site:     sy,
-		store:    st,
-		hostname: hostname,
-		admin:    admin,
-		proto:    proto,
-		renderer: renderer,
-		st:       makeStyles(renderer),
-		width:    w,
-		height:   h,
-		vp:       viewport.New(w, max(1, h-3)),
+		site:      sy,
+		store:     st,
+		hostname:  hostname,
+		admin:     admin,
+		proto:     proto,
+		nowFolder: "/now/",
+		renderer:  renderer,
+		st:        makeStyles(renderer),
+		width:     w,
+		height:    h,
+		vp:        viewport.New(w, max(1, h-3)),
 	}
 	m.navigate("/", false)
 	return m
@@ -613,17 +616,23 @@ func (m *model) updateEditHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *model) saveEdit() (tea.Model, tea.Cmd) {
 	content := m.ed.Value()
 	if m.edNow {
-		if strings.TrimSpace(content) == "" {
-			m.setStatus("empty now post", true)
+		text := strings.TrimSpace(content)
+		if text == "" {
+			m.setStatus("empty note", true)
 			return m, nil
 		}
-		if _, err := m.store.AddNow(content); err != nil {
+		path := m.store.NewStreamPath(m.nowFolder, time.Now())
+		if _, err := m.store.SavePage(path, []byte(text+"\n"), "", "ssh note"); err != nil {
 			m.setStatus("post failed: "+err.Error(), true)
 			return m, nil
 		}
+		if !m.store.IsFeedFolder(m.nowFolder) {
+			_, _ = m.store.SavePage(m.nowFolder+store.FeedMarker,
+				store.DefaultFeedMarker("Now", "", 30, true), "", "auto")
+		}
 		m.mode = modeBrowse
 		m.navigate(m.url, false)
-		m.setStatus("now post published ✓ (shown wherever a page uses {{now}})", false)
+		m.setStatus("note published ✓ ("+path+")", false)
 		return m, nil
 	}
 	pg, err := m.store.SavePage(m.edPath, []byte(content), "", "ssh")

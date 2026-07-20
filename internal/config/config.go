@@ -52,28 +52,12 @@ type Feed struct {
 	Limit  int    `yaml:"limit"`
 }
 
-// IsNow reports whether the feed draws from now-posts rather than pages.
-func (f Feed) IsNow() bool { return strings.EqualFold(f.Source, "now") }
-
-// NowFeed publishes the now-post stream as its own feed. Like folder feeds,
-// it stays off until you ask for it.
-type NowFeed struct {
-	Enabled bool   `yaml:"enabled"`
-	Path    string `yaml:"path"`
-	// Page is where a human reads the posts, e.g. "/now".
-	Page     string `yaml:"page"`
-	Title    string `yaml:"title"`
-	Subtitle string `yaml:"subtitle"`
-}
-
 // Feeds configures the Atom feeds this site publishes.
 type Feeds struct {
 	// Author is the name used in every feed's <author>.
 	Author string `yaml:"author"`
 	// Limit caps entries per feed when a feed does not set its own.
 	Limit int `yaml:"limit"`
-	// Now publishes the now-post stream.
-	Now NowFeed `yaml:"now"`
 	// List holds any other feeds (a site-wide one, for instance). Folder
 	// feeds are not listed here — they are turned on per folder.
 	List []Feed `yaml:"list"`
@@ -131,6 +115,11 @@ type Config struct {
 	// Highlight controls syntax highlighting of code blocks.
 	Highlight Highlight `yaml:"highlight"`
 
+	// NowFolder is the stream that {{now}} and the "post a note" buttons
+	// use. It is an ordinary folder; mark it with a .feed carrying
+	// hide_files to keep its notes out of listings.
+	NowFolder string `yaml:"now_folder"`
+
 	// Timezone is an IANA zone name (e.g. "America/Edmonton") used when
 	// rendering timestamps (now-posts, {{updated}}, admin displays).
 	// Empty = the server's local time.
@@ -159,6 +148,7 @@ func Default() *Config {
 		Tor:      Tor{Enabled: false, Binary: "tor"},
 
 		Feeds:     Feeds{Limit: 30},
+		NowFolder: "/now/",
 		Highlight: Highlight{Enabled: true, Style: "github", DarkStyle: "github-dark"},
 
 		MaxUploadBytes: 10 << 20,
@@ -243,6 +233,7 @@ func applyEnv(c *Config) {
 
 	str("STARPULSE_HOSTNAME", &c.Hostname)
 	str("STARPULSE_TIMEZONE", &c.Timezone)
+	str("STARPULSE_NOW_FOLDER", &c.NowFolder)
 	str("STARPULSE_ADMIN_PASSWORD", &c.AdminPassword)
 	str("STARPULSE_DATA_DIR", &c.DataDir)
 
@@ -277,19 +268,6 @@ func applyEnv(c *Config) {
 // folder and discovered from the store.
 func (c *Config) EffectiveFeeds() []Feed {
 	list := c.Feeds.List
-	if c.Feeds.Now.Enabled {
-		n := c.Feeds.Now
-		if n.Path == "" {
-			n.Path = "/now/feed.xml"
-		}
-		if n.Page == "" {
-			n.Page = "/now"
-		}
-		list = append([]Feed{{
-			Path: n.Path, Source: "now", Page: n.Page,
-			Title: n.Title, Subtitle: n.Subtitle,
-		}}, list...)
-	}
 	out := make([]Feed, 0, len(list))
 	for _, f := range list {
 		if f.Path == "" {
@@ -302,11 +280,7 @@ func (c *Config) EffectiveFeeds() []Feed {
 			f.Source = "/"
 		}
 		if f.Page == "" {
-			if f.IsNow() {
-				f.Page = "/"
-			} else {
-				f.Page = f.Source
-			}
+			f.Page = f.Source
 		}
 		if f.Title == "" {
 			f.Title = c.Hostname
@@ -422,14 +396,11 @@ tor:
 feeds:
   author: ""
   limit: 30
-  # publish the now-post stream as a feed
-  now:
-    enabled: false
-    path: /now/feed.xml
-    page: /now
-    title: "My now posts"
-  # anything else, e.g. a single site-wide feed of every dated page
+  # feeds beyond the per-folder ones, e.g. a site-wide feed of every dated page
   list: []
+
+# Short notes ({{now}}, the "post a note" button) are pages in this folder.
+now_folder: /now/
 
 # Syntax highlighting for fenced code blocks on the web. The language comes
 # from the text after the opening fence (go, python, sh, ...). Palettes are

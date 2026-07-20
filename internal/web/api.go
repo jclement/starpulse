@@ -192,12 +192,15 @@ func (s *Server) apiNow(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-		posts, err := s.Store.ListNow(limit)
-		if err != nil {
-			jsonErr(w, http.StatusInternalServerError, err.Error())
-			return
+		pages := s.Store.StreamPages(s.nowFolder(), limit)
+		out := make([]map[string]any, 0, len(pages))
+		for _, p := range pages {
+			out = append(out, map[string]any{
+				"path": p.Path, "content": string(p.Content),
+				"date": p.Date, "created": p.Created.UTC().Format("2006-01-02T15:04:05Z"),
+			})
 		}
-		jsonOut(w, http.StatusOK, map[string]any{"posts": orEmpty(posts)})
+		jsonOut(w, http.StatusOK, map[string]any{"posts": out})
 	case http.MethodPost:
 		body, err := io.ReadAll(io.LimitReader(r.Body, 64<<10))
 		if err != nil {
@@ -212,19 +215,26 @@ func (s *Server) apiNow(w http.ResponseWriter, r *http.Request) {
 		if json.Unmarshal(body, &obj) == nil && obj.Content != "" {
 			text = obj.Content
 		}
-		post, err := s.Store.AddNow(text)
+		text = strings.TrimSpace(text)
+		if text == "" {
+			jsonErr(w, http.StatusBadRequest, "empty note")
+			return
+		}
+		path := s.Store.NewStreamPath(s.nowFolder(), time.Now().In(s.loc()))
+		pg, err := s.Store.SavePage(path, []byte(text+"\n"), "", "api note")
 		if err != nil {
 			jsonErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		jsonOut(w, http.StatusOK, post)
+		s.ensureStream(s.nowFolder())
+		jsonOut(w, http.StatusOK, map[string]any{"path": pg.Path, "content": string(pg.Content)})
 	case http.MethodDelete:
-		id, _ := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
-		if err := s.Store.DeleteNow(id); err != nil {
+		p := r.URL.Query().Get("path")
+		if err := s.Store.DeletePage(p, "api"); err != nil {
 			jsonErr(w, http.StatusNotFound, "not found")
 			return
 		}
-		jsonOut(w, http.StatusOK, map[string]any{"deleted": id})
+		jsonOut(w, http.StatusOK, map[string]any{"deleted": p})
 	default:
 		jsonErr(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
