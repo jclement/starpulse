@@ -29,6 +29,17 @@ Log in at `/login`, then use the ✎ link in any page footer.
 sudo starpulse install --hostname example.org
 ```
 
+```
+starpulse serve          run the server
+starpulse status         service health, per-protocol view graphs, top pages
+starpulse doctor         config / TLS / DNS / tor connectivity checks
+starpulse install        set up as a hardened systemd service (Linux, root)
+starpulse uninstall      remove it (prompts before touching data)
+starpulse self-update    update from the latest GitHub release
+starpulse import <dir>   import a file-tree site into the database
+starpulse hash-password  bcrypt-hash a password for config.yaml
+```
+
 Installs to `/opt/starpulse`, writes a sample config to
 `/etc/starpulse/config.yaml` (with a generated admin password), stores data in
 `/var/lib/starpulse`, and registers a hardened systemd unit that runs as a
