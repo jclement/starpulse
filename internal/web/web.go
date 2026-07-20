@@ -34,7 +34,8 @@ var pageTpl = template.Must(template.New("page").Parse(`<!DOCTYPE html>
 <title>{{.Title}}</title>
 <meta name="description" content="{{.Desc}}">
 <link rel="stylesheet" href="/_/style.css?v={{.AssetV}}">
-<link rel="alternate" type="application/atom+xml" title="feed" href="/feed.xml">
+{{range .Feeds}}<link rel="alternate" type="application/atom+xml" title="{{.Title}}" href="{{.Path}}">
+{{end}}
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✨</text></svg>">
 {{if .Theme}}<style>
 {{.Theme}}
@@ -59,6 +60,7 @@ type pageData struct {
 	Theme    template.CSS
 	EditPath string // set when logged in and the page has an editable source
 	AssetV   string // cache-buster for embedded assets
+	Feeds    []config.Feed
 }
 
 // Server is the web half of starpulse.
@@ -111,8 +113,7 @@ func (s *Server) Handler() http.Handler {
 		fmt.Fprintln(w, "ok")
 	})
 	mux.HandleFunc("/search", s.handleSearch)
-	mux.HandleFunc("/feed.xml", s.handleFeed)
-	mux.HandleFunc("/posts/feed.xml", s.handleFeed)
+	s.registerFeeds(mux)
 
 	mux.HandleFunc("/login", s.handleLogin)
 	mux.HandleFunc("/logout", s.handleLogout)
@@ -200,6 +201,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, titl
 		Theme:    template.CSS(theme),
 		EditPath: editPath,
 		AssetV:   site.BuildVersion,
+		Feeds:    s.Cfg.EffectiveFeeds(),
 	})
 }
 
@@ -280,77 +282,6 @@ func pageURL(p string) string {
 		u = strings.TrimSuffix(u, "index")
 	}
 	return u
-}
-
-// handleFeed emits an Atom feed of dated pages (site-wide, newest first).
-func (s *Server) handleFeed(w http.ResponseWriter, r *http.Request) {
-	metas, err := s.Store.ListAll()
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	type item struct {
-		title, url, date string
-	}
-	var items []item
-	for _, m := range metas {
-		if m.Binary || store.Hidden(m.Path) || !strings.HasSuffix(m.Path, ".gmi") {
-			continue
-		}
-		if d := datedName(m.Path); d != "" {
-			title := m.Title
-			if title == "" {
-				title = m.Path
-			}
-			items = append(items, item{title: title, url: pageURL(m.Path), date: d})
-		}
-	}
-	// newest first
-	for i := 0; i < len(items); i++ {
-		for j := i + 1; j < len(items); j++ {
-			if items[j].date > items[i].date {
-				items[i], items[j] = items[j], items[i]
-			}
-		}
-	}
-	if len(items) > 30 {
-		items = items[:30]
-	}
-
-	base := "https://" + s.Cfg.Hostname
-	updated := time.Now().UTC().Format(time.RFC3339)
-	if len(items) > 0 {
-		if t, err := time.Parse("2006-01-02", items[0].date); err == nil {
-			updated = t.UTC().Format(time.RFC3339)
-		}
-	}
-	var b strings.Builder
-	b.WriteString(`<?xml version="1.0" encoding="utf-8"?>` + "\n")
-	b.WriteString(`<feed xmlns="http://www.w3.org/2005/Atom">` + "\n")
-	fmt.Fprintf(&b, "<title>%s</title>\n", html.EscapeString(s.Cfg.Hostname))
-	fmt.Fprintf(&b, `<link href="%s/"/>`+"\n", base)
-	fmt.Fprintf(&b, `<link rel="self" href="%s/feed.xml"/>`+"\n", base)
-	fmt.Fprintf(&b, "<id>%s/</id>\n<updated>%s</updated>\n", base, updated)
-	for _, it := range items {
-		t, err := time.Parse("2006-01-02", it.date)
-		if err != nil {
-			continue
-		}
-		fmt.Fprintf(&b, "<entry>\n<title>%s</title>\n", html.EscapeString(it.title))
-		fmt.Fprintf(&b, `<link href="%s%s"/>`+"\n", base, it.url)
-		fmt.Fprintf(&b, "<id>%s%s</id>\n<updated>%s</updated>\n</entry>\n", base, it.url, t.UTC().Format(time.RFC3339))
-	}
-	b.WriteString("</feed>\n")
-	w.Header().Set("Content-Type", "application/atom+xml; charset=utf-8")
-	_, _ = w.Write([]byte(b.String()))
-}
-
-func datedName(p string) string {
-	base := p[strings.LastIndexByte(p, '/')+1:]
-	if len(base) >= 11 && base[4] == '-' && base[7] == '-' && (base[10] == '-' || base[10] == '_') {
-		return base[:10]
-	}
-	return ""
 }
 
 // ---- login --------------------------------------------------------------

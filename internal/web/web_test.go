@@ -244,6 +244,54 @@ func TestFeed(t *testing.T) {
 	if strings.Contains(body, "No date") {
 		t.Error("undated page in feed")
 	}
+	// the historical /posts/feed.xml alias keeps working
+	if code, _ := get(t, ts, "/posts/feed.xml"); code != 200 {
+		t.Errorf("legacy feed alias = %d", code)
+	}
+}
+
+func TestConfiguredFeeds(t *testing.T) {
+	srv, st, _ := testServer(t)
+	srv.Cfg.Feeds = config.Feeds{
+		Author: "Jeff",
+		List: []config.Feed{
+			{Path: "/posts/feed.xml", Source: "/posts/", Title: "gemlog"},
+			{Path: "/now/feed.xml", Source: "now", Page: "/now", Title: "now"},
+		},
+	}
+	ts2 := httptest.NewServer(srv.Handler())
+	defer ts2.Close()
+
+	_, _ = st.SavePage("/posts/2026-07-19-hello.gmi", []byte("# Hello World\n\nbody"), "", "t")
+	_, _ = st.SavePage("/elsewhere/2026-07-19-other.gmi", []byte("# Other"), "", "t")
+	_, _ = st.AddNow("a now update")
+
+	code, posts := get(t, ts2, "/posts/feed.xml")
+	if code != 200 || !strings.Contains(posts, "Hello World") {
+		t.Fatalf("posts feed: %d\n%s", code, posts)
+	}
+	if strings.Contains(posts, "Other") {
+		t.Error("posts feed leaked another folder")
+	}
+	if !strings.Contains(posts, "<author><name>Jeff</name></author>") {
+		t.Error("configured author missing")
+	}
+
+	code, now := get(t, ts2, "/now/feed.xml")
+	if code != 200 || !strings.Contains(now, "a now update") {
+		t.Fatalf("now feed: %d\n%s", code, now)
+	}
+	if strings.Contains(now, "Hello World") {
+		t.Error("now feed contains pages")
+	}
+
+	// both feeds are advertised for discovery in the HTML head
+	_, home := get(t, ts2, "/")
+	for _, want := range []string{`href="/posts/feed.xml"`, `href="/now/feed.xml"`} {
+		if !strings.Contains(home, want) {
+			t.Errorf("feed not advertised in <head>: %s", want)
+		}
+	}
 }
 
 func login(t *testing.T, ts *httptest.Server, password string) *http.Client {

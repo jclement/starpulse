@@ -128,6 +128,7 @@ func Serve(cfg *config.Config, logger *log.Logger) error {
 			Site:  sy,
 			Log:   logger.With("proto", "gemini"),
 			Onion: onion,
+			Loc:   sy.Loc,
 			TLS: &tls.Config{
 				MinVersion:   tls.VersionTLS12,
 				Certificates: []tls.Certificate{cert},

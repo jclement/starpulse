@@ -129,6 +129,38 @@ undo is always one click away. Per-page **stats** are broken down by door:
 `http`, `gemini`, `http+tor`, `gemini+tor`. Full-text **search** (SQLite FTS5)
 is at `/search` on both protocols.
 
+## Feeds
+
+Two conventions, both supported:
+
+- **On gemini**, the idiomatic feed *is a page*: a list of link lines whose
+  labels begin with an ISO date. `{{list}}` already emits exactly that, so a
+  folder index like `/posts/` is subscribable in Lagrange or Amfora with no
+  configuration at all. This is the convention to prefer for gemini readers.
+- **On the web**, subscribers want **Atom**. Configure as many as you like;
+  each is served at its own path (over HTTP *and* gemini), and every one is
+  advertised in the HTML `<head>` for auto-discovery.
+
+```yaml
+feeds:
+  author: "Your Name"     # used in every feed's <author>
+  limit: 30               # default entries per feed
+  list:
+    - path: /posts/feed.xml    # where the feed is served
+      source: /posts/          # a folder of dated pages
+      title: "My gemlog"
+    - path: /now/feed.xml
+      source: now              # the now-post stream
+      page: /now               # where a human reads them
+      title: "My now posts"
+```
+
+`source` is a folder of dated pages (`/posts/`), `/` for the whole site, or
+the literal `now` for micro-posts. Only **dated** filenames
+(`2026-07-20-title.gmi`) enter a page feed — undated pages are treated as
+permanent pages, not posts. With no `feeds:` block configured, a single
+site-wide feed is published at `/feed.xml`.
+
 ## Editing
 
 - **Web**: log in at `/login` → subtle ✎ edit link on every page, plus

@@ -35,6 +35,33 @@ type SSHService struct {
 	AuthorizedKeys []string `yaml:"authorized_keys"`
 }
 
+// Feed is one Atom feed: where it is served, and what it draws from.
+type Feed struct {
+	// Path is the URL the feed is served at, e.g. "/feed.xml".
+	Path string `yaml:"path"`
+	// Source is a folder of dated pages ("/posts/"), "/" for the whole
+	// site, or the literal "now" for the now-post stream.
+	Source string `yaml:"source"`
+	// Page is the human-readable page this feed represents (used for the
+	// alternate link and the feed id). Defaults to Source, or "/".
+	Page     string `yaml:"page"`
+	Title    string `yaml:"title"`
+	Subtitle string `yaml:"subtitle"`
+	Limit    int    `yaml:"limit"`
+}
+
+// IsNow reports whether the feed draws from now-posts rather than pages.
+func (f Feed) IsNow() bool { return strings.EqualFold(f.Source, "now") }
+
+// Feeds configures the Atom feeds this site publishes.
+type Feeds struct {
+	// Author is the name used in every feed's <author>.
+	Author string `yaml:"author"`
+	// Limit caps entries per feed when a feed does not set its own.
+	Limit int    `yaml:"limit"`
+	List  []Feed `yaml:"list"`
+}
+
 // Titan configures titan:// uploads over the gemini listener.
 type Titan struct {
 	Enabled bool `yaml:"enabled"`
@@ -71,6 +98,9 @@ type Config struct {
 
 	Titan Titan `yaml:"titan"`
 	Tor   Tor   `yaml:"tor"`
+
+	// Feeds are the Atom feeds published by this site.
+	Feeds Feeds `yaml:"feeds"`
 
 	// Timezone is an IANA zone name (e.g. "America/Edmonton") used when
 	// rendering timestamps (now-posts, {{updated}}, admin displays).
@@ -210,6 +240,46 @@ func applyEnv(c *Config) {
 	i64("STARPULSE_MAX_UPLOAD_BYTES", &c.MaxUploadBytes)
 }
 
+// EffectiveFeeds returns the configured feeds with defaults filled in. With
+// nothing configured it yields one site-wide feed at /feed.xml, matching the
+// historical behaviour.
+func (c *Config) EffectiveFeeds() []Feed {
+	list := c.Feeds.List
+	if len(list) == 0 {
+		list = []Feed{{Path: "/feed.xml", Source: "/", Title: c.Hostname}}
+	}
+	out := make([]Feed, 0, len(list))
+	for _, f := range list {
+		if f.Path == "" {
+			continue // a feed with nowhere to live is ignored
+		}
+		if !strings.HasPrefix(f.Path, "/") {
+			f.Path = "/" + f.Path
+		}
+		if f.Source == "" {
+			f.Source = "/"
+		}
+		if f.Page == "" {
+			if f.IsNow() {
+				f.Page = "/"
+			} else {
+				f.Page = f.Source
+			}
+		}
+		if f.Title == "" {
+			f.Title = c.Hostname
+		}
+		if f.Limit <= 0 {
+			f.Limit = c.Feeds.Limit
+		}
+		if f.Limit <= 0 {
+			f.Limit = 30
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
 // NormalizedFingerprints returns the titan cert allowlist lowercased with
 // colons/whitespace stripped.
 func (c *Config) NormalizedFingerprints() []string {
@@ -302,6 +372,21 @@ tor:
   enabled: false
   binary: tor
   # onion: xyz.onion     # set instead if tor is managed outside starpulse
+
+# Atom feeds. With no list configured, a single site-wide feed is published
+# at /feed.xml. On gemini the idiomatic feed is just a page of dated link
+# lines — {{list}} already emits that, so /posts/ is subscribable as-is.
+feeds:
+  author: ""
+  limit: 30
+  list:
+    - path: /posts/feed.xml
+      source: /posts/          # a folder of dated pages
+      title: "My gemlog"
+    - path: /now/feed.xml
+      source: now              # the now-post stream
+      page: /now               # where a human can read them
+      title: "My now posts"
 
 # IANA timezone for displayed timestamps (now-posts, {{updated}}, admin).
 # Empty = server local time.

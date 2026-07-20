@@ -19,6 +19,7 @@ import (
 
 	"github.com/jclement/starpulse/internal/auth"
 	"github.com/jclement/starpulse/internal/config"
+	"github.com/jclement/starpulse/internal/feed"
 	"github.com/jclement/starpulse/internal/site"
 	"github.com/jclement/starpulse/internal/store"
 )
@@ -35,6 +36,8 @@ type Server struct {
 	Site  *site.Site
 	Log   *log.Logger
 	TLS   *tls.Config
+	// Loc is the timezone used in feed timestamps.
+	Loc *time.Location
 	// Onion returns the hidden-service hostname ("" when tor is off).
 	Onion func() string
 
@@ -177,6 +180,17 @@ func (s *Server) serveGemini(conn net.Conn, u *url.URL) (int, string) {
 	}
 	if raw, found := strings.CutPrefix(u.Path, "/raw/"); found {
 		return s.serveRaw(conn, "/"+raw)
+	}
+	// configured Atom feeds are served on gemini as well — the idiomatic
+	// gemini feed is a page of dated links, but some clients want Atom
+	for _, f := range s.Cfg.EffectiveFeeds() {
+		if u.Path == f.Path {
+			b := &feed.Builder{Store: s.Store, Hostname: s.Cfg.Hostname,
+				Author: s.Cfg.Feeds.Author, Loc: s.Loc}
+			respond(conn, 20, "application/atom+xml")
+			_, _ = io.WriteString(conn, b.Build(f, "gemini://"+s.Cfg.Hostname))
+			return 20, "feed " + f.Path
+		}
 	}
 
 	// Editors (clients presenting an authorized cert) get the RAW stored
