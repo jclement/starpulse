@@ -137,6 +137,10 @@ func (s *Server) sortFiles(files []store.Meta, dir string) {
 			if di != dj {
 				return di > dj // newest first
 			}
+			// same day: the name carries whatever finer order exists (a
+			// note's HHMM), so it reverses too — otherwise the morning note
+			// sorts above the evening one
+			return files[i].Path > files[j].Path
 		}
 		return files[i].Path < files[j].Path
 	})

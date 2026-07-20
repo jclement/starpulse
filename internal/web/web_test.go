@@ -429,6 +429,9 @@ func TestFolderFileOrder(t *testing.T) {
 	_, _ = st.SavePage("/posts/2026-01-05-alpha.gmi", []byte("# Alpha"), "", "t")
 	_, _ = st.SavePage("/posts/2026-07-02-zulu.gmi", []byte("# Zulu"), "", "t")
 	_, _ = st.SavePage("/posts/2026-03-11-mike.gmi", []byte("# Mike"), "", "t")
+	// two on the same day: the time in the name is the only order there is
+	_, _ = st.SavePage("/posts/2026-07-02-0900.gmi", []byte("morning"), "", "t")
+	_, _ = st.SavePage("/posts/2026-07-02-2130.gmi", []byte("evening"), "", "t")
 	// an ordinary folder stays alphabetical: undated pages have no chronology
 	_, _ = st.SavePage("/docs/zebra.gmi", []byte("# Z"), "", "t")
 	_, _ = st.SavePage("/docs/index.gmi", []byte("# Docs"), "", "t")
@@ -452,7 +455,9 @@ func TestFolderFileOrder(t *testing.T) {
 	}
 
 	got := order("/posts/")
-	want := []string{".feed", ".header", "index.gmi", "2026-07-02-zulu.gmi", "2026-03-11-mike.gmi", "2026-01-05-alpha.gmi"}
+	want := []string{".feed", ".header", "index.gmi",
+		"2026-07-02-zulu.gmi", "2026-07-02-2130.gmi", "2026-07-02-0900.gmi",
+		"2026-03-11-mike.gmi", "2026-01-05-alpha.gmi"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("feed folder order:\n got %v\nwant %v", got, want)
 	}
