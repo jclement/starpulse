@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -47,6 +48,7 @@ type Meta struct {
 	Path    string
 	Title   string
 	Date    string
+	Created time.Time
 	Mime    string
 	Binary  bool
 	Size    int64
@@ -221,24 +223,159 @@ func TextMime(mime string) string {
 var fmDateRe = regexp.MustCompile(`(?m)^date\s*[:=]\s*["\']?(\d{4}-\d{2}-\d{2})`)
 var nameDateRe = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})[-_]`)
 
-// PageDate resolves a page's publication date — what makes it a *post*
-// rather than a permanent page.
+// PageDate resolves a page's *explicit* publication date, in priority order:
 //
-// Two sources, in order: an explicit "date:" in front matter, then a
-// YYYY-MM-DD filename prefix. Deliberately NOT the row's created timestamp:
-// every page has one of those, so it could not distinguish a post from a
-// page, and it would make backdating or importing impossible. A date is a
-// statement of intent, so it stays explicit.
+//  1. a YYYY-MM-DD prefix on the filename — visible, portable, sorts itself
+//  2. a "date:" in front matter — for when you want a clean filename
+//
+// Returns "" when neither is present; callers inside a log folder then fall
+// back to the row's creation timestamp (see Store.EffectiveDate), which is
+// why a folder must be *marked* for that to happen — otherwise every page on
+// the site would look like a post.
 func PageDate(p string, content []byte) string {
+	if m := nameDateRe.FindStringSubmatch(path.Base(p)); m != nil {
+		return m[1]
+	}
 	if i := strings.Index(string(content), "\n---"); i >= 0 && strings.HasPrefix(string(content), "---") {
 		if m := fmDateRe.FindSubmatch(content[:i]); m != nil {
 			return string(m[1])
 		}
 	}
-	if m := nameDateRe.FindStringSubmatch(path.Base(p)); m != nil {
-		return m[1]
+	return ""
+}
+
+// ---- log folders --------------------------------------------------------
+
+// FeedMarker is the special file that marks a folder as a log: a gemlog, a
+// project journal, release notes. Its presence means "every page in here is
+// a post", so posts can have plain names and take their date from the
+// database. Its contents optionally give the feed a title (first line) and
+// subtitle (the rest).
+const FeedMarker = ".feed"
+
+// LogFolders returns folders that publish a feed, mapped to whether the
+// folder was explicitly marked with a .feed file. A folder qualifies if it
+// is marked, or if it simply contains date-stamped pages.
+func (s *Store) LogFolders() map[string]bool {
+	out := map[string]bool{}
+	metas, err := s.ListAll()
+	if err != nil {
+		return out
+	}
+	for _, m := range metas {
+		if path.Base(m.Path) == FeedMarker {
+			out[folderOf(m.Path)] = true
+			continue
+		}
+		if m.Binary || Hidden(m.Path) || !strings.HasSuffix(m.Path, ".gmi") {
+			continue
+		}
+		if m.Date != "" {
+			if _, ok := out[folderOf(m.Path)]; !ok {
+				out[folderOf(m.Path)] = false
+			}
+		}
+	}
+	return out
+}
+
+// IsLogFolder reports whether a folder publishes a feed.
+func (s *Store) IsLogFolder(folder string) bool {
+	if !strings.HasSuffix(folder, "/") {
+		folder += "/"
+	}
+	_, ok := s.LogFolders()[folder]
+	return ok
+}
+
+// IsMarkedLog reports whether a folder carries an explicit .feed marker, in
+// which case every page in it is a post and may be dated from the database.
+func (s *Store) IsMarkedLog(folder string) bool {
+	if !strings.HasSuffix(folder, "/") {
+		folder += "/"
+	}
+	return s.PageExists(folder + FeedMarker)
+}
+
+// FeedSettings are the per-folder knobs held in a .feed marker file.
+type FeedSettings struct {
+	Title    string
+	Subtitle string
+	Author   string
+	Limit    int
+}
+
+// ParseFeedMarker reads a .feed file: plain "key: value" lines, with # for
+// comments. Unknown keys are ignored so the format can grow.
+func ParseFeedMarker(content []byte) FeedSettings {
+	var fs FeedSettings
+	for _, line := range strings.Split(string(content), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, v, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		k = strings.ToLower(strings.TrimSpace(k))
+		v = strings.Trim(strings.TrimSpace(v), `"'`)
+		switch k {
+		case "title":
+			fs.Title = v
+		case "subtitle":
+			fs.Subtitle = v
+		case "author":
+			fs.Author = v
+		case "limit":
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				fs.Limit = n
+			}
+		}
+	}
+	return fs
+}
+
+// FeedInfo reads a folder's .feed settings.
+func (s *Store) FeedInfo(folder string) FeedSettings {
+	if !strings.HasSuffix(folder, "/") {
+		folder += "/"
+	}
+	pg, err := s.GetPage(folder + FeedMarker)
+	if err != nil {
+		return FeedSettings{}
+	}
+	return ParseFeedMarker(pg.Content)
+}
+
+// DefaultFeedMarker renders a starting .feed file for a folder, prefilled
+// with the values in effect so they can simply be edited.
+func DefaultFeedMarker(title, author string, limit int) []byte {
+	return []byte(fmt.Sprintf(`# Feed settings for this folder. Delete this file to stop publishing.
+title: %s
+subtitle:
+author: %s
+limit: %d
+`, title, author, limit))
+}
+
+// EffectiveDate is the date used for ordering and feeds: the page's explicit
+// date, or — inside a marked log folder — the day it was created.
+func (s *Store) EffectiveDate(m Meta, markedFolder bool) string {
+	if m.Date != "" {
+		return m.Date
+	}
+	if markedFolder {
+		return m.Created.Format("2006-01-02")
 	}
 	return ""
+}
+
+func folderOf(p string) string {
+	if i := strings.LastIndexByte(p, '/'); i >= 0 {
+		return p[:i+1]
+	}
+	return "/"
 }
 
 // backfillDates fills the date column for rows written before it existed.
@@ -456,7 +593,7 @@ func likeEscape(s string) string {
 }
 
 func (s *Store) listWhere(where string, args []any) ([]Meta, error) {
-	rows, err := s.db.Query(`SELECT path, title, mime, binary, date, length(content), updated FROM pages WHERE `+where+` ORDER BY path`, args...)
+	rows, err := s.db.Query(`SELECT path, title, mime, binary, date, length(content), created, updated FROM pages WHERE `+where+` ORDER BY path`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -465,11 +602,12 @@ func (s *Store) listWhere(where string, args []any) ([]Meta, error) {
 	for rows.Next() {
 		var m Meta
 		var bin int
-		var updated int64
-		if err := rows.Scan(&m.Path, &m.Title, &m.Mime, &bin, &m.Date, &m.Size, &updated); err != nil {
+		var created, updated int64
+		if err := rows.Scan(&m.Path, &m.Title, &m.Mime, &bin, &m.Date, &m.Size, &created, &updated); err != nil {
 			return nil, err
 		}
 		m.Binary = bin != 0
+		m.Created = time.Unix(created, 0)
 		m.Updated = time.Unix(updated, 0)
 		out = append(out, m)
 	}

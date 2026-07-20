@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 )
 
 func openTest(t *testing.T) *Store {
@@ -274,12 +275,12 @@ func TestMimeFor(t *testing.T) {
 
 func TestDefaultExtAndTextMime(t *testing.T) {
 	cases := map[string]string{
-		"/about":            "/about.gmi",
+		"/about":               "/about.gmi",
 		"/posts/2026-01-01-hi": "/posts/2026-01-01-hi.gmi",
-		"/about.gmi":        "/about.gmi",
-		"/media/cat.png":    "/media/cat.png",
-		"/posts/.header":    "/posts/.header",
-		"/.theme":           "/.theme",
+		"/about.gmi":           "/about.gmi",
+		"/media/cat.png":       "/media/cat.png",
+		"/posts/.header":       "/posts/.header",
+		"/.theme":              "/.theme",
 	}
 	for in, want := range cases {
 		if got := DefaultExt(in); got != want {
@@ -299,8 +300,9 @@ func TestPageDate(t *testing.T) {
 		t.Errorf("filename date = %q", d)
 	}
 	fm := []byte("---\ntitle: X\ndate: 2026-07-21\n---\n# X")
-	if d := PageDate("/posts/2026-07-20-hi.gmi", fm); d != "2026-07-21" {
-		t.Errorf("front matter should win: %q", d)
+	// the filename is the most visible signal, so it wins
+	if d := PageDate("/posts/2026-07-20-hi.gmi", fm); d != "2026-07-20" {
+		t.Errorf("filename should win over front matter: %q", d)
 	}
 	if d := PageDate("/posts/clean.gmi", fm); d != "2026-07-21" {
 		t.Errorf("front matter alone = %q", d)
@@ -358,5 +360,61 @@ func TestRenameCarriesHistory(t *testing.T) {
 	_, _ = st.SavePage("/taken.gmi", []byte("# taken"), "", "t")
 	if _, err := st.RenamePage("/new.gmi", "/taken.gmi", "t"); err == nil {
 		t.Error("rename clobbered an existing page")
+	}
+}
+
+func TestLogFoldersAndEffectiveDate(t *testing.T) {
+	st := openTest(t)
+	// a marked folder: plain filenames, dates come from the database
+	_, _ = st.SavePage("/journal/"+FeedMarker,
+		[]byte("# a comment\ntitle: My Journal\nsubtitle: things I did\nauthor: Jeff\nlimit: 5\n"), "", "t")
+	_, _ = st.SavePage("/journal/hello-world.gmi", []byte("# Hello World\n\nbody"), "", "t")
+	// an unmarked folder that qualifies purely by dated filenames
+	_, _ = st.SavePage("/posts/2026-07-20-dated.gmi", []byte("# Dated"), "", "t")
+	// an ordinary folder
+	_, _ = st.SavePage("/pages/about.gmi", []byte("# About"), "", "t")
+
+	logs := st.LogFolders()
+	if marked, ok := logs["/journal/"]; !ok || !marked {
+		t.Errorf("marked folder not detected: %v", logs)
+	}
+	if marked, ok := logs["/posts/"]; !ok || marked {
+		t.Errorf("dated folder should qualify but not be marked: %v", logs)
+	}
+	if _, ok := logs["/pages/"]; ok {
+		t.Error("ordinary folder treated as a log")
+	}
+	if !st.IsMarkedLog("/journal") || st.IsMarkedLog("/posts") {
+		t.Error("IsMarkedLog wrong")
+	}
+
+	fs := st.FeedInfo("/journal/")
+	if fs.Title != "My Journal" || fs.Subtitle != "things I did" {
+		t.Errorf("marker metadata = %+v", fs)
+	}
+	if fs.Author != "Jeff" || fs.Limit != 5 {
+		t.Errorf("marker author/limit = %+v", fs)
+	}
+	// the generated default parses back to what it claims
+	def := ParseFeedMarker(DefaultFeedMarker("T", "A", 12))
+	if def.Title != "T" || def.Author != "A" || def.Limit != 12 {
+		t.Errorf("default marker round-trip = %+v", def)
+	}
+
+	// an undated page in a marked folder gets its creation date
+	metas, _ := st.ListPrefix("/journal/")
+	var page Meta
+	for _, m := range metas {
+		if m.Path == "/journal/hello-world.gmi" {
+			page = m
+		}
+	}
+	today := time.Now().Format("2006-01-02")
+	if d := st.EffectiveDate(page, true); d != today {
+		t.Errorf("marked-folder date = %q, want %q", d, today)
+	}
+	// ...but the same page outside a marked folder has no date at all
+	if d := st.EffectiveDate(page, false); d != "" {
+		t.Errorf("unmarked page should have no date, got %q", d)
 	}
 }

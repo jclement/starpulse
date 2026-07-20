@@ -47,7 +47,9 @@ type Feed struct {
 	Page     string `yaml:"page"`
 	Title    string `yaml:"title"`
 	Subtitle string `yaml:"subtitle"`
-	Limit    int    `yaml:"limit"`
+	// Author overrides feeds.author for this feed.
+	Author string `yaml:"author"`
+	Limit  int    `yaml:"limit"`
 }
 
 // IsNow reports whether the feed draws from now-posts rather than pages.

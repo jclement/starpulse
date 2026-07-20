@@ -171,7 +171,10 @@ func TestLogFolderDiscovery(t *testing.T) {
 	_, _ = st.SavePage("/about.gmi", []byte("# About"), "", "t") // undated: not a log
 
 	logs := LogFolders(st)
-	if logs["/posts/"] != 2 || logs["/projects/"] != 1 {
+	if _, ok := logs["/posts/"]; !ok {
+		t.Errorf("log folders = %v", logs)
+	}
+	if _, ok := logs["/projects/"]; !ok {
 		t.Errorf("log folders = %v", logs)
 	}
 	if _, ok := logs["/"]; ok {
@@ -226,16 +229,16 @@ func TestDateSources(t *testing.T) {
 	// 2. front-matter date, clean URL — also a post
 	_, _ = st.SavePage("/posts/clean.gmi",
 		[]byte("---\ntitle: Clean\ndate: 2026-07-20\n---\n# Clean\n\nbody"), "", "t")
-	// 3. front matter overrides the filename
-	_, _ = st.SavePage("/posts/2020-01-01-wrong.gmi",
-		[]byte("---\ndate: 2026-07-21\n---\n# Corrected\n\nbody"), "", "t")
+	// 3. the filename wins over front matter (most visible signal)
+	_, _ = st.SavePage("/posts/2026-07-21-named-wins.gmi",
+		[]byte("---\ndate: 2020-01-01\n---\n# Named Wins\n\nbody"), "", "t")
 	// 4. no date anywhere — a permanent page, never a post
 	_, _ = st.SavePage("/posts/about.gmi", []byte("# About\n\nbody"), "", "t")
 
 	b := &Builder{Store: st, Hostname: "ex.example", Loc: time.UTC}
 	out := b.Build(config.Feed{Path: "/posts/feed.xml", Source: "/posts/", Limit: 30}, "https://ex.example")
 
-	for _, want := range []string{"Named", "Clean", "Corrected"} {
+	for _, want := range []string{"Named", "Clean", "Named Wins"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("feed missing %q", want)
 		}
@@ -243,15 +246,66 @@ func TestDateSources(t *testing.T) {
 	if strings.Contains(out, ">About<") {
 		t.Error("undated page treated as a post")
 	}
-	// front matter wins: the corrected post sorts newest
+	// the filename date is the one used, so this post sorts newest
 	if !strings.Contains(out, "<published>2026-07-21T00:00:00Z</published>") {
-		t.Errorf("front-matter date did not override the filename:\n%s", out)
+		t.Errorf("filename date not used:\n%s", out)
 	}
-	if strings.Index(out, "Corrected") > strings.Index(out, "Clean") {
-		t.Error("front-matter date not used for ordering")
+	if strings.Contains(out, "<published>2020-01-01") {
+		t.Error("front matter overrode the filename")
+	}
+	if strings.Index(out, "Named Wins") > strings.Index(out, "Clean") {
+		t.Error("ordering wrong")
 	}
 	// and the folder counts as a log folder on either signal
-	if LogFolders(st)["/posts/"] != 3 {
-		t.Errorf("log folder count = %d, want 3", LogFolders(st)["/posts/"])
+	if _, ok := LogFolders(st)["/posts/"]; !ok {
+		t.Error("folder with dated pages is not a log folder")
+	}
+}
+
+func TestMarkedFolderCleanNames(t *testing.T) {
+	st := testStore(t)
+	// mark the folder — now plain filenames are posts, dated from the DB
+	_, _ = st.SavePage("/journal/"+store.FeedMarker,
+		[]byte("title: Field Notes\nsubtitle: what I got up to\nauthor: Jeff\nlimit: 5\n"), "", "t")
+	_, _ = st.SavePage("/journal/hello-world.gmi", []byte("# Hello World\n\nbody"), "", "t")
+	_, _ = st.SavePage("/journal/second-post.gmi", []byte("# Second Post\n\nmore"), "", "t")
+	_, _ = st.SavePage("/journal/index.gmi", []byte("# Field Notes"), "", "t")
+
+	c := config.Default()
+	c.Hostname = "ex.example"
+	f, ok := Resolve(c, st, "/journal/feed.xml")
+	if !ok {
+		t.Fatal("marked folder has no feed")
+	}
+	// the marker supplies title, subtitle, author and limit
+	if f.Title != "Field Notes" || f.Subtitle != "what I got up to" {
+		t.Errorf("marker metadata not used: %+v", f)
+	}
+	if f.Author != "Jeff" || f.Limit != 5 {
+		t.Errorf("marker author/limit not used: %+v", f)
+	}
+
+	b := &Builder{Store: st, Hostname: "ex.example", Loc: time.UTC}
+	out := b.Build(f, "https://ex.example")
+	for _, want := range []string{"Hello World", "Second Post"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("undated post %q missing from marked folder feed:\n%s", want, out)
+		}
+	}
+	// clean URLs, no date prefixes
+	if !strings.Contains(out, "https://ex.example/journal/hello-world") {
+		t.Error("expected a clean post URL")
+	}
+	// the folder's own index page is not one of its posts
+	if strings.Count(out, "<entry>") != 2 {
+		t.Errorf("entries = %d, want 2 (index.gmi should be excluded)", strings.Count(out, "<entry>"))
+	}
+	// today's date, from the database
+	today := time.Now().UTC().Format("2006-01-02")
+	if !strings.Contains(out, "<published>"+today) {
+		t.Errorf("posts not dated from the database:\n%s", out)
+	}
+	if !strings.Contains(out, "<author><name>Jeff</name></author>") {
+		t.Error("per-folder author not applied")
 	}
 }

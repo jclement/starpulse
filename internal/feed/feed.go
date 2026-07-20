@@ -68,7 +68,10 @@ func (b *Builder) Build(f config.Feed, baseURL string) string {
 	if title == "" {
 		title = b.Hostname
 	}
-	author := b.Author
+	author := f.Author
+	if author == "" {
+		author = b.Author
+	}
 	if author == "" {
 		author = b.Hostname
 	}
@@ -131,6 +134,9 @@ func (b *Builder) pageEntries(f config.Feed, baseURL string) []entry {
 		prefix += "/"
 	}
 
+	// inside a marked folder every page is a post, dated from the database
+	marked := prefix != "/" && b.Store.IsMarkedLog(prefix)
+
 	var out []entry
 	for _, m := range metas {
 		if m.Binary || store.Hidden(m.Path) || !strings.HasSuffix(m.Path, ".gmi") {
@@ -139,7 +145,10 @@ func (b *Builder) pageEntries(f config.Feed, baseURL string) []entry {
 		if prefix != "/" && !strings.HasPrefix(m.Path, prefix) {
 			continue
 		}
-		date := m.Date
+		if strings.HasSuffix(m.Path, "/index.gmi") {
+			continue // the folder's own page is not one of its posts
+		}
+		date := b.Store.EffectiveDate(m, marked)
 		if date == "" {
 			continue // only dated pages are feed-worthy
 		}
@@ -280,40 +289,12 @@ func PageURL(p string) string {
 // itself rather than configured, and each one publishes its own Atom feed
 // at <folder>feed.xml.
 
-// LogFolders returns the folders containing at least one dated page,
-// mapped to how many dated pages each holds.
-func LogFolders(st *store.Store) map[string]int {
-	out := map[string]int{}
-	metas, err := st.ListAll()
-	if err != nil {
-		return out
-	}
-	for _, m := range metas {
-		if m.Binary || store.Hidden(m.Path) || !strings.HasSuffix(m.Path, ".gmi") {
-			continue
-		}
-		if m.Date == "" {
-			continue
-		}
-		out[folderOf(m.Path)]++
-	}
-	return out
-}
+// LogFolders returns folders publishing a feed, mapped to whether each was
+// explicitly marked with a .feed file.
+func LogFolders(st *store.Store) map[string]bool { return st.LogFolders() }
 
-// IsLogFolder reports whether a folder holds dated pages.
-func IsLogFolder(st *store.Store, folder string) bool {
-	if !strings.HasSuffix(folder, "/") {
-		folder += "/"
-	}
-	return LogFolders(st)[folder] > 0
-}
-
-func folderOf(p string) string {
-	if i := strings.LastIndexByte(p, '/'); i >= 0 {
-		return p[:i+1]
-	}
-	return "/"
-}
+// IsLogFolder reports whether a folder publishes a feed.
+func IsLogFolder(st *store.Store, folder string) bool { return st.IsLogFolder(folder) }
 
 // Resolve maps a request path to the feed it should serve, if any. Explicit
 // configuration wins; otherwise a <folder>feed.xml under a log folder is
@@ -335,12 +316,21 @@ func Resolve(cfg *config.Config, st *store.Store, path string) (config.Feed, boo
 	if limit <= 0 {
 		limit = 30
 	}
+	fs := st.FeedInfo(folder)
+	if fs.Title == "" {
+		fs.Title = folderTitle(st, folder, cfg.Hostname)
+	}
+	if fs.Limit > 0 {
+		limit = fs.Limit
+	}
 	return config.Feed{
-		Path:   path,
-		Source: folder,
-		Page:   folder,
-		Title:  folderTitle(st, folder, cfg.Hostname),
-		Limit:  limit,
+		Path:     path,
+		Source:   folder,
+		Page:     folder,
+		Title:    fs.Title,
+		Subtitle: fs.Subtitle,
+		Author:   fs.Author,
+		Limit:    limit,
 	}, true
 }
 

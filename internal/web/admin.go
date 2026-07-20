@@ -39,6 +39,7 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/now", guard(s.adminNow))
 	mux.HandleFunc("/admin/now/delete", guard(s.adminNowDelete))
 	mux.HandleFunc("/admin/stats", guard(s.adminStats))
+	mux.HandleFunc("/admin/feed", guard(s.adminFeedToggle))
 }
 
 func (s *Server) adminRender(w http.ResponseWriter, r *http.Request, title, body string) {
@@ -99,14 +100,30 @@ func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
 		if label == "/" {
 			label = "/ (root)"
 		}
-		newLink := ""
-		if logFolders[folder] > 0 {
-			// a log folder: offer a dated post, prefilled with today
-			newLink = fmt.Sprintf(` <a class="newpost" href="/admin/edit?new=1&amp;path=%s">+ new post</a>`,
+		marked, isLog := logFolders[folder]
+		actions := ""
+		if isLog {
+			actions += fmt.Sprintf(` <a class="newpost" href="/admin/edit?new=1&amp;path=%s">+ new post</a>`,
 				url.QueryEscape(folder))
 		}
+		// every non-root folder can publish (or stop publishing) a feed
+		if folder != "/" {
+			verb, state := "enable", "off"
+			if marked {
+				verb, state = "disable", "on"
+			}
+			actions += fmt.Sprintf(
+				` <form class="inline feedtoggle" method="post" action="/admin/feed">`+
+					`<input type="hidden" name="folder" value="%s">`+
+					`<input type="hidden" name="enable" value="%t">`+
+					`<button class="linkish" type="submit" title="%s the Atom feed for this folder">feed: %s</button></form>`,
+				html.EscapeString(folder), !marked, verb, state)
+			if isLog && !marked {
+				actions += ` <span class="dim">(auto — dated posts)</span>`
+			}
+		}
 		fmt.Fprintf(&b, `<tbody class="folder-group" data-folder="%s"><tr class="folder-row"><td colspan="4">%s <span class="dim">%d</span>%s</td></tr>`+"\n",
-			html.EscapeString(strings.ToLower(folder)), html.EscapeString(label), len(rows), newLink)
+			html.EscapeString(strings.ToLower(folder)), html.EscapeString(label), len(rows), actions)
 		for _, m := range rows {
 			title := m.Title
 			view := ""
@@ -254,10 +271,26 @@ func (s *Server) adminEdit(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Query().Get("path")
 	isNew := r.URL.Query().Get("new") == "1" || p == ""
 	// creating inside a log folder? offer today's date-stamped filename
-	if isNew && strings.HasSuffix(p, "/") && feed.IsLogFolder(s.Store, p) {
+	// a marked folder dates its posts from the database, so leave the name
+	// clean; an unmarked log folder relies on dated filenames, so offer one
+	if isNew && strings.HasSuffix(p, "/") && feed.IsLogFolder(s.Store, p) && !s.Store.IsMarkedLog(p) {
 		p += time.Now().In(s.loc()).Format("2006-01-02") + "-"
 	}
 	content := ""
+	// starting points for the special files, so they are editable rather
+	// than blank puzzles
+	if isNew {
+		switch {
+		case strings.HasSuffix(p, store.FeedMarker):
+			author := s.Cfg.Feeds.Author
+			if author == "" {
+				author = s.Cfg.Hostname
+			}
+			content = string(store.DefaultFeedMarker(strings.Trim(pageFolder(p), "/"), author, 30))
+		case strings.HasSuffix(p, ".theme"):
+			content = defaultThemeCSS()
+		}
+	}
 	if !isNew {
 		pg, err := s.Store.GetPage(p)
 		if err != nil {
@@ -479,6 +512,50 @@ func (s *Server) adminNowDelete(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(r.FormValue("id"), 10, 64)
 	_ = s.Store.DeleteNow(id)
 	http.Redirect(w, r, "/admin/now", http.StatusSeeOther)
+}
+
+// adminFeedToggle turns a folder's Atom feed on or off by creating or
+// removing its .feed marker (which is just a page, so it versions and syncs
+// like everything else).
+func (s *Server) adminFeedToggle(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	folder := r.FormValue("folder")
+	if !strings.HasSuffix(folder, "/") {
+		folder += "/"
+	}
+	marker := folder + store.FeedMarker
+	msg := ""
+	if r.FormValue("enable") == "true" {
+		title := strings.Trim(folder, "/")
+		if pg, err := s.Store.GetPage(folder + "index.gmi"); err == nil && pg.Title != "" {
+			title = pg.Title
+		}
+		author := s.Cfg.Feeds.Author
+		if author == "" {
+			author = s.Cfg.Hostname
+		}
+		limit := s.Cfg.Feeds.Limit
+		if limit <= 0 {
+			limit = 30
+		}
+		// seed an editable config rather than an opaque marker
+		body := store.DefaultFeedMarker(title, author, limit)
+		if _, err := s.Store.SavePage(marker, body, "", "web"); err != nil {
+			msg = "could not enable feed: " + err.Error()
+		} else {
+			msg = "feed enabled for " + folder + " — edit " + marker + " to set title, author or limit"
+		}
+	} else {
+		if err := s.Store.DeletePage(marker, "web"); err != nil {
+			msg = "feed already off for " + folder
+		} else {
+			msg = "feed disabled for " + folder
+		}
+	}
+	http.Redirect(w, r, "/admin?msg="+url.QueryEscape(msg), http.StatusSeeOther)
 }
 
 func (s *Server) adminStats(w http.ResponseWriter, r *http.Request) {

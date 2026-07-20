@@ -104,7 +104,8 @@ Dated filenames get listed newest-first and feed `/feed.xml`.
 | file | what |
 |---|---|
 | `.header` / `.footer` | gemtext included above/below every page in that folder and below |
-| `.theme` | CSS applied to the web rendering of that folder and below |
+| `.theme` | CSS applied to the web rendering of that folder and below (created prefilled with the site's own colour variables) |
+| `.feed` | marks the folder as a log and configures its Atom feed |
 
 **Directives** inside any page:
 
@@ -157,17 +158,34 @@ configuration:
 The feed is titled after the folder's `index.gmi`, served over HTTP *and*
 gemini, and advertised in the HTML `<head>` for auto-discovery.
 
-**What makes something a post** is having a date, and a date comes from one of
-two places — never from the file's creation timestamp:
+**What makes something a post** is having a date, resolved in this order:
 
-1. a `date:` in front matter, which wins and lets you keep a clean URL
-   (`/posts/hello.gmi` published `2026-07-20`), or
-2. a `YYYY-MM-DD-` filename prefix (`/posts/2026-07-20-hello.gmi`).
+1. a `YYYY-MM-DD-` prefix on the filename — the most visible signal, and it
+   sorts itself;
+2. a `date:` in front matter, if you would rather not put dates in filenames;
+3. the page's **creation date from the database** — but *only* inside a folder
+   you have explicitly marked as a log.
 
-An undated page in a log folder is just a permanent page. Creation timestamps
-are deliberately *not* used: every page has one, so they could not tell a post
-from a page, and they would make backdating or importing an archive
-impossible. A date is a statement of intent, so it stays explicit.
+That third rule is why marking matters. Without it, creation dates would make
+every page on the site look like a post. With it, you get plain filenames:
+mark `/journal/`, write `/journal/hello-world.gmi`, and it is a post dated the
+day you wrote it.
+
+Toggle a folder's feed from the admin page list — each non-root folder row has
+a **feed: on/off** control. Turning it on writes a `.feed` file in that folder,
+prefilled and editable:
+
+```
+# Feed settings for this folder. Delete this file to stop publishing.
+title: Field Notes
+subtitle:
+author: Jeff Clement
+limit: 30
+```
+
+Folders that merely *contain* dated filenames publish a feed automatically
+without being marked, and their "+ new post" link prefills today's date.
+Marked folders skip the date prefix, since the database supplies the date.
 
 The admin knows about log folders too: each one gets a **+ new post** link
 that opens the editor with today's date already in the filename.

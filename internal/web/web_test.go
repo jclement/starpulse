@@ -293,6 +293,64 @@ func TestNewPostDatePrefill(t *testing.T) {
 	}
 }
 
+func TestFeedToggle(t *testing.T) {
+	_, st, ts := testServer(t)
+	_, _ = st.SavePage("/journal/index.gmi", []byte("# Field Notes"), "", "t")
+	_, _ = st.SavePage("/journal/hello-world.gmi", []byte("# Hello World\n\nbody"), "", "t")
+	client := login(t, ts, testPassword)
+
+	// undated pages in an unmarked folder: no feed
+	if code, _ := get(t, ts, "/journal/feed.xml"); code != 404 {
+		t.Fatalf("unmarked folder already has a feed: %d", code)
+	}
+
+	// the admin offers a toggle on non-root folders
+	resp, _ := client.Get(ts.URL + "/admin")
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(b), `action="/admin/feed"`) {
+		t.Error("no feed toggle on the folder row")
+	}
+	if strings.Contains(string(b), `value="/"`+"\n") {
+		t.Error("root folder should not offer a feed toggle")
+	}
+
+	// enable it
+	resp2, err := client.PostForm(ts.URL+"/admin/feed", url.Values{
+		"folder": {"/journal/"}, "enable": {"true"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp2.Body.Close()
+	if !st.IsMarkedLog("/journal/") {
+		t.Fatal("folder not marked after enabling")
+	}
+	// now the undated page is a post, dated from the database
+	code, xml := get(t, ts, "/journal/feed.xml")
+	if code != 200 || !strings.Contains(xml, "Hello World") {
+		t.Fatalf("feed after enable: %d\n%s", code, xml)
+	}
+	if !strings.Contains(xml, "<title>Field Notes</title>") {
+		t.Error("feed title should come from the folder index")
+	}
+	// and it is advertised for discovery
+	_, home := get(t, ts, "/")
+	if !strings.Contains(home, `href="/journal/feed.xml"`) {
+		t.Error("enabled feed not advertised in <head>")
+	}
+
+	// disable it again
+	resp3, _ := client.PostForm(ts.URL+"/admin/feed", url.Values{
+		"folder": {"/journal/"}, "enable": {"false"}})
+	resp3.Body.Close()
+	if st.IsMarkedLog("/journal/") {
+		t.Error("folder still marked after disabling")
+	}
+	if code, _ := get(t, ts, "/journal/feed.xml"); code != 404 {
+		t.Errorf("feed still served after disable: %d", code)
+	}
+}
+
 func TestSearchPage(t *testing.T) {
 	_, st, ts := testServer(t)
 	_, _ = st.SavePage("/x.gmi", []byte("# Xylophones\n\nmusic and mallets"), "", "t")
