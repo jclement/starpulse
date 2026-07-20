@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -31,20 +32,14 @@ const (
 	inputNewPath
 )
 
-var (
-	stBar    = lipgloss.NewStyle().Foreground(lipgloss.Color("235")).Background(lipgloss.Color("215")).Bold(true)
-	stBarDim = lipgloss.NewStyle().Foreground(lipgloss.Color("235")).Background(lipgloss.Color("179"))
-	stStatus = lipgloss.NewStyle().Foreground(lipgloss.Color("114"))
-	stErr    = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
-	stHelp   = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-)
-
 // model is the SSH TUI: a gemini browser, plus editing when admin.
 type model struct {
 	site     *site.Site
 	store    *store.Store
 	hostname string
 	admin    bool
+	renderer *lipgloss.Renderer
+	st       *styles
 
 	width, height int
 	mode          mode
@@ -74,12 +69,17 @@ type model struct {
 	confirm string
 }
 
-func newModel(sy *site.Site, st *store.Store, hostname string, admin bool, w, h int) *model {
+func newModel(sy *site.Site, st *store.Store, hostname string, admin bool, w, h int, renderer *lipgloss.Renderer) *model {
+	if renderer == nil {
+		renderer = lipgloss.DefaultRenderer()
+	}
 	m := &model{
 		site:     sy,
 		store:    st,
 		hostname: hostname,
 		admin:    admin,
+		renderer: renderer,
+		st:       makeStyles(renderer),
 		width:    w,
 		height:   h,
 		vp:       viewport.New(w, max(1, h-3)),
@@ -135,7 +135,7 @@ func (m *model) showDoc(url, title, gmi string) {
 
 // refresh re-renders the current document into the viewport.
 func (m *model) refresh(toTop bool) {
-	lines, links := renderDoc(m.gmi, min(m.width-2, 100), m.sel)
+	lines, links := renderDoc(m.st, m.gmi, min(m.width-2, 100), m.sel)
 	m.links = links
 	m.vp.SetContent(strings.Join(lines, "\n"))
 	if toTop {
@@ -317,6 +317,8 @@ func (m *model) prompt(kind inputKind, label, value string) {
 	m.inputLabel = label
 	in := textinput.New()
 	in.SetValue(value)
+	in.Cursor.SetMode(cursor.CursorStatic)
+	in.Cursor.Style = m.renderer.NewStyle().Reverse(true)
 	in.CursorEnd()
 	in.Focus()
 	in.Width = max(20, m.width-10)
@@ -429,6 +431,13 @@ func (m *model) initEditor(content string) {
 	ed := textarea.New()
 	ed.CharLimit = 0
 	ed.MaxHeight = 0
+	ed.ShowLineNumbers = false
+	ed.Cursor.SetMode(cursor.CursorStatic)
+	ed.Cursor.Style = m.renderer.NewStyle().Reverse(true)
+	ed.FocusedStyle.CursorLine = m.renderer.NewStyle().Background(lipgloss.Color("236"))
+	ed.FocusedStyle.Base = m.renderer.NewStyle()
+	ed.FocusedStyle.Prompt = m.renderer.NewStyle().Foreground(lipgloss.Color("215"))
+	ed.BlurredStyle = ed.FocusedStyle
 	ed.SetValue(content)
 	ed.Focus()
 	m.ed = ed
@@ -515,7 +524,31 @@ func (m *model) header(label string) string {
 	if gap < 1 {
 		gap = 1
 	}
-	return stBar.Render(brand) + strings.Repeat(" ", gap) + stBarDim.Render(right)
+	return m.st.bar.Render(brand) + strings.Repeat(" ", gap) + m.st.barDim.Render(right)
+}
+
+// bbsPad right-pads styled content to the full terminal width with the
+// blue-bar background, old-school BBS style.
+func (m *model) bbsPad(content string) string {
+	pad := m.width - lipgloss.Width(content)
+	if pad > 0 {
+		content += m.st.bbsBar.Render(strings.Repeat(" ", pad))
+	}
+	return content
+}
+
+// bbsHelp renders "key action" pairs onto the blue bar with yellow keys.
+func (m *model) bbsHelp(pairs ...string) string {
+	var b strings.Builder
+	b.WriteString(m.st.bbsBar.Render(" "))
+	for i := 0; i+1 < len(pairs); i += 2 {
+		if i > 0 {
+			b.WriteString(m.st.bbsBar.Render("  "))
+		}
+		b.WriteString(m.st.bbsKey.Render(pairs[i]))
+		b.WriteString(m.st.bbsBar.Render(" " + pairs[i+1]))
+	}
+	return m.bbsPad(b.String())
 }
 
 func (m *model) statusLine() string {
@@ -523,27 +556,27 @@ func (m *model) statusLine() string {
 		return ""
 	}
 	if m.statusErr {
-		return stErr.Render(m.status)
+		return m.bbsPad(m.st.bbsErr.Render(" " + m.status + " "))
 	}
-	return stStatus.Render(m.status)
+	return m.bbsPad(m.st.bbsOK.Render(" " + m.status + " "))
 }
 
 func (m *model) viewBrowse() string {
 	var footer string
 	switch m.mode {
 	case modeInput:
-		footer = stHelp.Render(m.inputLabel+": ") + m.input.View()
+		footer = m.st.bbsBar.Render(" "+m.inputLabel+": ") + m.input.View()
 	case modeConfirm:
-		footer = stErr.Render("delete " + m.confirm + "? [y/N]")
+		footer = m.bbsPad(m.st.bbsErr.Render(" delete " + m.confirm + "? [y/N] "))
 	default:
-		help := "tab links · ↵ open · b back · g goto · / search · h home"
-		if m.admin {
-			help += " · e edit · c new · n now · x del"
-		}
-		help += " · q quit"
 		footer = m.statusLine()
 		if footer == "" {
-			footer = stHelp.Render(help)
+			pairs := []string{"tab", "links", "↵", "open", "b", "back", "g", "goto", "/", "search", "h", "home"}
+			if m.admin {
+				pairs = append(pairs, "e", "edit", "c", "new", "n", "now", "x", "del")
+			}
+			pairs = append(pairs, "q", "quit")
+			footer = m.bbsHelp(pairs...)
 		}
 	}
 	return m.header(m.url) + "\n" + m.vp.View() + "\n" + footer
@@ -556,7 +589,7 @@ func (m *model) viewEdit() string {
 	}
 	foot := m.statusLine()
 	if foot == "" {
-		foot = stHelp.Render("ctrl+s save · esc/ctrl+q back")
+		foot = m.bbsHelp("^S", "save", "esc", "back")
 	}
 	return m.header(label) + "\n" + m.ed.View() + "\n" + foot
 }

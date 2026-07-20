@@ -7,14 +7,17 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish"
 	"github.com/charmbracelet/wish/activeterm"
 	btm "github.com/charmbracelet/wish/bubbletea"
+	"github.com/muesli/termenv"
 
 	"github.com/jclement/starpulse/internal/auth"
 	"github.com/jclement/starpulse/internal/config"
@@ -93,7 +96,26 @@ func (s *Server) teaHandler(sess ssh.Session) (tea.Model, []tea.ProgramOption) {
 		h = 24
 	}
 	admin := sess.User() == "admin"
-	return newModel(s.Site, s.Store, s.Cfg.Hostname, admin, w, h), []tea.ProgramOption{tea.WithAltScreen()}
+	// build the renderer from TERM alone — probing the terminal (OSC/DA
+	// queries) stalls against clients that never answer
+	renderer := lipgloss.NewRenderer(sess, termenv.WithColorCache(true))
+	renderer.SetColorProfile(profileFor(pty.Term))
+	renderer.SetHasDarkBackground(true)
+	return newModel(s.Site, s.Store, s.Cfg.Hostname, admin, w, h, renderer), []tea.ProgramOption{tea.WithAltScreen()}
+}
+
+func profileFor(term string) termenv.Profile {
+	term = strings.ToLower(term)
+	switch {
+	case strings.Contains(term, "truecolor"), strings.Contains(term, "direct"):
+		return termenv.TrueColor
+	case strings.Contains(term, "256color"):
+		return termenv.ANSI256
+	case term == "" || term == "dumb":
+		return termenv.Ascii
+	default:
+		return termenv.ANSI
+	}
 }
 
 // ListenAndServe runs the SSH server until it fails or is shut down.
