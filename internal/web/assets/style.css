@@ -506,6 +506,20 @@ a.newpost:hover { text-decoration: underline; }
 /* ---- editor highlighting overlay ----
    the textarea keeps the caret and selection but paints no glyphs; the
    <pre> underneath shows the coloured copy in exactly the same metrics. */
+/* the "an unsaved copy exists" bar: informative, not alarming */
+.recover {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6em;
+  align-items: center;
+  padding: 0.6em 1em;
+  background: color-mix(in srgb, #d8c48a 22%, transparent);
+  border-bottom: 1px solid var(--line);
+  font-size: 0.9em;
+}
+.recover button { font: inherit; padding: 0.25em 0.8em; border-radius: 6px; border: none; background: var(--accent); color: var(--bg); cursor: pointer; }
+.recover button.quiet { background: none; color: var(--dim); border: 1px solid var(--line); }
+
 /* the editor column: the overlay's positioning context, sized to the
    textarea alone so it can never reach across into the preview */
 .ed-src { position: relative; flex: 1; min-width: 0; display: flex; }

@@ -33,6 +33,28 @@
   var dirty = false;
   var previewTimer = null;
 
+  // A local copy of whatever is in the box, kept in this browser. It exists
+  // because the editor once reported "saved" over work the server had
+  // discarded: whatever goes wrong next, the words should still be here.
+  var stash = (function () {
+    var key = "starpulse:draft:" + location.search;
+    var ok = true;
+    try { localStorage.setItem(key + ":probe", "1"); localStorage.removeItem(key + ":probe"); }
+    catch (e) { ok = false; }
+    return {
+      keep: function (path, text) {
+        if (!ok) return;
+        try { localStorage.setItem(key, JSON.stringify({ path: path, text: text, at: Date.now() })); }
+        catch (e) { /* full or private: the server is still the real answer */ }
+      },
+      read: function () {
+        if (!ok) return null;
+        try { return JSON.parse(localStorage.getItem(key) || "null"); } catch (e) { return null; }
+      },
+      clear: function () { if (ok) { try { localStorage.removeItem(key); } catch (e) {} } },
+    };
+  })();
+
   function setStatus(msg, isErr) {
     status.textContent = msg;
     status.style.color = isErr ? "#b3402a" : "";
@@ -50,6 +72,35 @@
   }
   ta.addEventListener("input", markDirty);
   pathInput.addEventListener("input", markDirty);
+  ta.addEventListener("input", function () { stash.keep(pathInput.value, ta.value); });
+
+  // an unsaved copy from last time means something went wrong: offer it back
+  // rather than quietly overwriting it with what the server has
+  (function () {
+    var s = stash.read();
+    if (!s || s.text === ta.value) return;
+    var bar = document.createElement("div");
+    bar.className = "recover";
+    bar.innerHTML = "<span>An unsaved copy of this page is in this browser " +
+      "(" + new Date(s.at).toLocaleString() + "). The editor is showing the server's version.</span> ";
+    var use = document.createElement("button");
+    use.type = "button";
+    use.textContent = "restore it";
+    use.addEventListener("click", function () {
+      ta.value = s.text;
+      markDirty();
+      bar.remove();
+      if (typeof paintHook === "function") paintHook();
+    });
+    var drop = document.createElement("button");
+    drop.type = "button";
+    drop.className = "quiet";
+    drop.textContent = "discard it";
+    drop.addEventListener("click", function () { stash.clear(); bar.remove(); });
+    bar.appendChild(use);
+    bar.appendChild(drop);
+    form.insertBefore(bar, form.firstChild);
+  })();
 
   window.addEventListener("beforeunload", function (e) {
     if (dirty) {
@@ -71,10 +122,17 @@
     // world seeing this and not
     var body = new FormData(form);
     body.set("publish", publish ? "1" : "0");
-    fetch("/admin/save", { method: "POST", body: body })
+    fetch("/admin/save", { method: "POST", body: body, headers: { Accept: "application/json" } })
       .then(function (r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json().catch(function () { return {}; }).then(function (j) {
+          if (!r.ok) throw new Error(j.error || "HTTP " + r.status);
+          return j;
+        });
+      })
+      .then(function (j) {
+        if (j.msg) setStatus(j.msg, true);
         dirty = false;
+        stash.clear();
         if (publish) {
           // the draft is gone and the badge with it: reload so the page
           // says what is actually true now
@@ -368,6 +426,7 @@
     layer.scrollLeft = ta.scrollLeft;
   }
 
+  window.paintHook = paint; // so a restored copy repaints the highlight layer
   ta.addEventListener("input", paint);
   ta.addEventListener("scroll", sync);
   if (path) path.addEventListener("input", paint);

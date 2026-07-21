@@ -317,13 +317,25 @@ func (s *Server) adminSave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	// The editor saves with fetch, which follows redirects — so a handler
+	// that redirected on failure looked like success, and the editor said
+	// "saved" over work it had just discarded. When the editor asks, answer
+	// with a status it cannot misread.
+	wantsJSON := strings.Contains(r.Header.Get("Accept"), "application/json")
+	fail := func(code int, msg string) {
+		if wantsJSON {
+			jsonErr(w, code, msg)
+			return
+		}
+		http.Redirect(w, r, "/admin?msg="+url.QueryEscape(msg), http.StatusSeeOther)
+	}
 	p := strings.TrimSpace(r.FormValue("path"))
 	content := r.FormValue("content")
 	// textarea newlines arrive as \r\n
 	content = strings.ReplaceAll(content, "\r\n", "\n")
 	cp, ok := store.CleanPath(store.DefaultExt(p))
 	if !ok {
-		http.Redirect(w, r, "/admin?msg="+url.QueryEscape("invalid path: "+p), http.StatusSeeOther)
+		fail(http.StatusBadRequest, "invalid path: "+p)
 		return
 	}
 	// A rename moves the page and its history rather than leaving a copy —
@@ -353,14 +365,30 @@ func (s *Server) adminSave(w http.ResponseWriter, r *http.Request) {
 	// "save" keeps the work to yourself; "publish" is what the world sees.
 	// Publishing writes the page directly rather than saving a draft and
 	// promoting it, so it is one commit in the page's history either way.
-	if r.FormValue("publish") == "1" {
+	publish := r.FormValue("publish") == "1"
+	if publish {
 		if _, err := s.Store.SavePage(cp, []byte(content), mime, "web"); err != nil {
-			http.Redirect(w, r, "/admin?msg="+url.QueryEscape("publish failed: "+err.Error()), http.StatusSeeOther)
+			fail(http.StatusBadRequest, "publish failed: "+err.Error())
 			return
 		}
 		_ = s.Store.DiscardDraft(cp) // no error if there was never a draft
 	} else if _, err := s.Store.SaveDraft(cp, []byte(content), mime, "web"); err != nil {
-		http.Redirect(w, r, "/admin?msg="+url.QueryEscape("save failed: "+err.Error()), http.StatusSeeOther)
+		fail(http.StatusBadRequest, "save failed: "+err.Error())
+		return
+	}
+	if wantsJSON {
+		// confirmed from the store, not from having reached this line
+		saved := s.Store.HasDraft(cp)
+		if publish {
+			saved = s.Store.PageExists(cp)
+		}
+		if !saved {
+			jsonErr(w, http.StatusInternalServerError, "save did not stick — nothing was written")
+			return
+		}
+		jsonOut(w, http.StatusOK, map[string]any{
+			"path": cp, "published": publish, "msg": renamed,
+		})
 		return
 	}
 	to := "/admin/edit?path=" + url.QueryEscape(cp)
