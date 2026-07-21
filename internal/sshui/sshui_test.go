@@ -864,3 +864,57 @@ func TestDraftsAreInvisibleInTheTUI(t *testing.T) {
 		}
 	}
 }
+
+// Port 23 collects hundreds of connections a day that land on the home page,
+// hold the socket open and type nothing. Counting those as readers buried
+// the real numbers — 5047 of 5968 views of one home page were scans. A
+// session is counted once it is used, and the page it landed on is counted
+// then, not lost.
+func TestScansDoNotCountAsViews(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	_, _ = st.SavePage("/index.gmi", []byte("# Home\n\n=> /about About"), "", "t")
+	_, _ = st.SavePage("/about.gmi", []byte("# About"), "", "t")
+
+	views := func() int64 {
+		var n int64
+		hits, _ := st.Stats()
+		for _, h := range hits {
+			n += h.Count
+		}
+		return n
+	}
+
+	// a scan: connect, render the home page, disconnect
+	scan := newProtoModel(site.New(st), st, "h", false, 80, 24, lipgloss.DefaultRenderer(), "telnet")
+	scan.navigate("/", false)
+	_ = scan.View()
+	if n := views(); n != 0 {
+		t.Errorf("a connection that typed nothing counted %d views", n)
+	}
+
+	// a reader: same landing, then a keystroke
+	reader := newProtoModel(site.New(st), st, "h", false, 80, 24, lipgloss.DefaultRenderer(), "telnet")
+	reader.navigate("/", false)
+	reader.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if n := views(); n != 1 {
+		t.Errorf("views after a keystroke = %d, want 1 (the landing page)", n)
+	}
+	// and from then on it counts as it goes
+	reader.navigate("/about", true)
+	if n := views(); n != 2 {
+		t.Errorf("views after navigating = %d, want 2", n)
+	}
+	// the landing page is credited, not lost
+	hits, _ := st.Stats()
+	byPath := map[string]int64{}
+	for _, h := range hits {
+		byPath[h.Path] += h.Count
+	}
+	if byPath["/"] != 1 || byPath["/about"] != 1 {
+		t.Errorf("views by path = %v, want one each", byPath)
+	}
+}

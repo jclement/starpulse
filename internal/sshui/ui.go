@@ -37,14 +37,19 @@ const (
 
 // model is the SSH TUI: a gemini browser, plus editing when admin.
 type model struct {
-	site      *site.Site
-	store     *store.Store
-	hostname  string
-	admin     bool
-	proto     string // stats bucket: "ssh" or "telnet"
-	nowFolder string
-	renderer  *lipgloss.Renderer
-	st        *styles
+	site     *site.Site
+	store    *store.Store
+	hostname string
+	admin    bool
+	proto    string // stats bucket: "ssh" or "telnet"
+	// live is set once the session does something. Until then its views are
+	// held in pendingHit rather than counted — a connection that types
+	// nothing is a scanner, and there are hundreds a day on port 23.
+	live       bool
+	pendingHit string
+	nowFolder  string
+	renderer   *lipgloss.Renderer
+	st         *styles
 
 	width, height int
 	mode          mode
@@ -128,7 +133,7 @@ func (m *model) navigate(url string, pushHistory bool) {
 		m.prompt(inputSearch, "search", "")
 		return
 	}
-	res := m.site.Resolve(url, m.proto)
+	res := m.site.Resolve(url, m.countProto())
 	switch res.Type {
 	case site.RedirectResult:
 		res = m.site.Resolve(res.Location, "")
@@ -141,6 +146,9 @@ func (m *model) navigate(url string, pushHistory bool) {
 			if len(m.history) > 100 {
 				m.history = m.history[1:]
 			}
+		}
+		if !m.live {
+			m.pendingHit = res.Page.URLPath
 		}
 		m.url = res.Page.URLPath
 		m.title = res.Page.Title
@@ -176,6 +184,33 @@ func searchQuery(raw string) string {
 		return ""
 	}
 	return q
+}
+
+// countProto is the protocol a view is recorded under, or "" while nobody
+// has proved they are there.
+//
+// Port 23 is scanner bait: connections arrive constantly, land on the home
+// page, hold the socket open for a quarter of an hour and type nothing. They
+// were counted as readers, and buried the real numbers — 5047 of 5968 views
+// of one home page. A session counts once it is used.
+func (m *model) countProto() string {
+	if !m.live {
+		return ""
+	}
+	return m.proto
+}
+
+// wake marks a session as a person rather than a scan, and records the page
+// they have been looking at all along.
+func (m *model) wake() {
+	if m.live {
+		return
+	}
+	m.live = true
+	if m.pendingHit != "" {
+		m.site.Count(m.pendingHit, m.proto)
+		m.pendingHit = ""
+	}
 }
 
 func (m *model) showDoc(url, title, gmi string) {
@@ -260,8 +295,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refresh(false)
 		return m, nil
 	case tea.MouseMsg:
+		m.wake()
 		return m.updateMouse(msg)
 	case tea.KeyMsg:
+		m.wake()
 		switch m.mode {
 		case modeEdit:
 			return m.updateEdit(msg)

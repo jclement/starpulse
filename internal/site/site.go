@@ -346,6 +346,16 @@ func joinChunks(parts []string) string {
 	return b.String()
 }
 
+// Count records a view outside the normal Resolve path. The terminal doors
+// need it because they cannot tell a reader from a port scanner until
+// something is typed, and by then the page is already on screen.
+func (s *Site) Count(urlPath, proto string) {
+	if proto == "" {
+		return
+	}
+	s.Store.Bump(canonicalKey(urlPath), proto)
+}
+
 // canonicalKey is the stats key for a URL (trailing slash trimmed, "/" kept).
 func canonicalKey(urlPath string) string {
 	k := strings.TrimSuffix(urlPath, "/")
