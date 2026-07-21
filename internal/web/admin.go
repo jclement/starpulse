@@ -150,7 +150,7 @@ preformatted block (alt text after the first fence)
 ` + "```" + `</pre>
 <h3>Directives</h3>
 <table>
-<tr><td><code>{{list [folder] [limit]}}</code></td><td>link list of a folder&#39;s pages, dated first, newest first</td></tr>
+<tr><td><code>{{list [folder] [limit] [name]}}</code></td><td>link list of a folder&#39;s pages: dated first, newest first, and same-day posts in the order written. Add <code>name</code> for alphabetical instead</td></tr>
 <tr><td><code>{{include /path}}</code></td><td>another page&#39;s content, inline</td></tr>
 <tr><td><code>{{stream [folder] [limit]}}</code></td><td>a folder&#39;s entries in full, newest first (0 = all)</td></tr>
 <tr><td><code>{{now [limit]}}</code></td><td>the same, for the notes folder (default 5)</td></tr>

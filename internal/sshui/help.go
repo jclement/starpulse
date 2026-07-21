@@ -57,7 +57,8 @@ Lines are the unit — no inline markup.
 
 ## Directives (expand when a page is served)
 
-* {{list [folder] [limit]}} — link list of a folder's pages, dated first, newest first
+* {{list [folder] [limit] [name]}} — a folder's pages: dated first, newest
+  first, same-day posts in the order written; "name" sorts alphabetically
 * {{include /path}} — another page's content, inline
 * {{stream [folder] [limit]}} — a folder's entries in full, newest first (0 = all)
 * {{now [limit]}} — the same, for the notes folder (default 5)

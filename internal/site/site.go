@@ -426,7 +426,7 @@ func (s *Site) syntheticListing(dir, proto string) *Result {
 
 // ---- directives ---------------------------------------------------------
 
-var lineDirectiveRe = regexp.MustCompile(`(?m)^\{\{\s*(list|index|include|random|now|stream)(?:\s+([^\s}]+))?(?:\s+(\d+))?\s*\}\}\s*$`)
+var lineDirectiveRe = regexp.MustCompile(`(?m)^\{\{\s*(list|index|include|random|now|stream)(?:\s+([^\s}]+))?(?:\s+(\d+))?(?:\s+([a-zA-Z-]+))?\s*\}\}\s*$`)
 
 // {{latest [folder] [part]}} works inline, anywhere in a line.
 var latestRe = regexp.MustCompile(`\{\{\s*latest(?:\s+([^\s}]+))?(?:\s+(body|link|title|date))?\s*\}\}`)
@@ -481,7 +481,11 @@ func (s *Site) expand(body, baseDir string, ctx expandCtx, depth int) string {
 
 	return lineDirectiveRe.ReplaceAllStringFunc(body, func(m string) string {
 		parts := lineDirectiveRe.FindStringSubmatch(m)
-		verb, arg, numStr := parts[1], parts[2], parts[3]
+		verb, arg, numStr, order := parts[1], parts[2], parts[3], strings.ToLower(parts[4])
+		// {{list /posts name}} — an order where the count would be
+		if order == "" && numStr == "" && isListOrder(arg) && verb != "include" && verb != "random" {
+			order, arg = strings.ToLower(arg), ""
+		}
 		// {{now 5}} puts the number in arg's slot
 		if verb == "now" && numStr == "" {
 			if _, err := strconv.Atoi(arg); err == nil {
@@ -499,7 +503,7 @@ func (s *Site) expand(body, baseDir string, ctx expandCtx, depth int) string {
 			if arg != "" {
 				dir = resolveRef(baseDir, arg)
 			}
-			return s.renderList(dir, num)
+			return s.renderList(dir, num, order)
 		case "include":
 			ref := resolveRef(baseDir, arg)
 			pg, err := s.Store.GetPage(ref)
@@ -560,6 +564,16 @@ func (s *Site) updatedString(ctx expandCtx) string {
 		return ctx.page.Updated.In(s.loc()).Format("2006-01-02")
 	}
 	return "recently"
+}
+
+// isListOrder reports whether a word names a listing order rather than a
+// folder. Only these three, so a folder really called /date still works.
+func isListOrder(s string) bool {
+	switch strings.ToLower(s) {
+	case "name", "alpha", "title":
+		return true
+	}
+	return false
 }
 
 // isLatestPart catches {{latest date}} — the old shorthand, which reads as a
@@ -630,6 +644,10 @@ type Entry struct {
 	Title string
 	Date  string
 	IsDir bool
+	// Created is when the page was first written. A date resolves only to a
+	// day, so this is what keeps two posts written on the same day in the
+	// order they were written rather than in alphabetical order.
+	Created time.Time
 }
 
 var dateNameRe = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})[-_]`)
@@ -686,6 +704,7 @@ func (s *Site) List(urlDir string) []Entry {
 			e.Title = stem
 		}
 		e.Date = s.Store.EffectiveDate(m, inFeedFolder)
+		e.Created = m.Created
 		// front-matter date/title override
 		if pg, err := s.Store.GetPage(m.Path); err == nil {
 			if _, fm := stripFrontMatter(string(pg.Content)); fm.Date != "" || fm.Title != "" {
@@ -699,21 +718,43 @@ func (s *Site) List(urlDir string) []Entry {
 		}
 		out = append(out, e)
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		di, dj := out[i].Date, out[j].Date
-		if (di != "") != (dj != "") {
-			return di != "" // dated entries first
-		}
-		if di != dj {
-			return di > dj // newest first
-		}
-		return strings.ToLower(out[i].Title) < strings.ToLower(out[j].Title)
-	})
+	sortByDate(out)
 	return out
 }
 
-func (s *Site) renderList(urlDir string, limit int) string {
+// sortByDate puts dated entries first, newest first, and keeps entries from
+// the same day in the order they were written. Falling back to the title
+// there threw away the only chronology a reader could see: two posts from
+// one day appeared alphabetically, which is not an order anyone asked for.
+func sortByDate(out []Entry) {
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if (a.Date != "") != (b.Date != "") {
+			return a.Date != "" // dated entries first
+		}
+		if a.Date != b.Date {
+			return a.Date > b.Date // newest first
+		}
+		if !a.Created.Equal(b.Created) {
+			return a.Created.After(b.Created) // same day: newest first
+		}
+		return strings.ToLower(a.Title) < strings.ToLower(b.Title)
+	})
+}
+
+// sortByName is the alternative a listing can ask for: plain alphabetical,
+// for folders of documents where the date means nothing.
+func sortByName(out []Entry) {
+	sort.SliceStable(out, func(i, j int) bool {
+		return strings.ToLower(out[i].Title) < strings.ToLower(out[j].Title)
+	})
+}
+
+func (s *Site) renderList(urlDir string, limit int, order string) string {
 	entries := s.List(urlDir)
+	if order == "name" || order == "alpha" || order == "title" {
+		sortByName(entries)
+	}
 	if limit > 0 && len(entries) > limit {
 		entries = entries[:limit]
 	}

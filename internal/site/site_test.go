@@ -385,3 +385,58 @@ func TestFrontMatterCanNameADifferentWrapper(t *testing.T) {
 		t.Errorf("directives in a named footer were not expanded:\n%s", g)
 	}
 }
+
+// A date resolves to a day, so two posts written on the same day used to
+// fall back to alphabetical order — which is not an order anyone asked for
+// and reads as random. Within a day, the order written is the order shown.
+func TestListKeepsChronologyWithinADay(t *testing.T) {
+	sy, st := testSite(t)
+	save(t, st, "/posts/"+store.FeedMarker, "title: Posts")
+	// Same date. The later post is alphabetically LAST, so date order and
+	// alphabetical order disagree — otherwise this test passes whether the
+	// tiebreak works or not, which is how the bug reached the site.
+	save(t, st, "/posts/2026-07-20-apple.gmi", "# Apple\n\nwritten first")
+	time.Sleep(1100 * time.Millisecond) // created timestamps are per-second
+	save(t, st, "/posts/2026-07-20-zebra.gmi", "# Zebra\n\nwritten second")
+	save(t, st, "/posts/2026-07-19-older.gmi", "# Older\n\nyesterday")
+	save(t, st, "/index.gmi", "# Home\n\n{{list /posts}}")
+
+	g := sy.Resolve("/", "").Page.Gemtext
+	apple := strings.Index(g, "Apple")
+	zebra := strings.Index(g, "Zebra")
+	older := strings.Index(g, "Older")
+	if apple < 0 || zebra < 0 || older < 0 {
+		t.Fatalf("listing is missing entries:\n%s", g)
+	}
+	if zebra > apple {
+		t.Errorf("the later post of the day sorted below the earlier one:\n%s", g)
+	}
+	if apple > older {
+		t.Errorf("a newer day sorted below an older one:\n%s", g)
+	}
+
+	// and the alphabetical order is available when asked for
+	save(t, st, "/alpha.gmi", "# Alpha\n\n{{list /posts name}}")
+	g = sy.Resolve("/alpha", "").Page.Gemtext
+	if strings.Index(g, "Apple") > strings.Index(g, "Older") ||
+		strings.Index(g, "Older") > strings.Index(g, "Zebra") {
+		t.Errorf("{{list /posts name}} is not alphabetical:\n%s", g)
+	}
+
+	// with a limit too, and the limit still applies to the sorted order
+	save(t, st, "/alpha2.gmi", "# Alpha\n\n{{list /posts 2 name}}")
+	g = sy.Resolve("/alpha2", "").Page.Gemtext
+	if strings.Count(g, "=>") != 2 {
+		t.Errorf("limit ignored with an order word:\n%s", g)
+	}
+	if !strings.Contains(g, "Apple") || strings.Contains(g, "Zebra") {
+		t.Errorf("{{list /posts 2 name}} took the wrong two:\n%s", g)
+	}
+
+	// a folder that happens to be called /name is still a folder
+	save(t, st, "/name/thing.gmi", "# Thing in a folder")
+	save(t, st, "/nm.gmi", "# NM\n\n{{list /name}}")
+	if g := sy.Resolve("/nm", "").Page.Gemtext; !strings.Contains(g, "Thing in a folder") {
+		t.Errorf("{{list /name}} stopped being a folder listing:\n%s", g)
+	}
+}

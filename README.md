@@ -181,7 +181,7 @@ automatically, so you cannot accidentally create an unviewable file.
 
 | directive | renders |
 |---|---|
-| `{{list [folder] [limit]}}` | link list of a folder's pages |
+| `{{list [folder] [limit] [name]}}` | a folder's pages: dated first, newest first, same-day posts in the order written. `name` sorts alphabetically |
 | `{{include /path}}` | another page's content, inline |
 | `{{stream [folder] [limit]}}` | a folder's entries in full, newest first |
 | `{{latest /folder [body\|link\|title\|date]}}` | one part of that folder's newest entry, inline. The folder is required; `.` means the page's own folder. Part defaults to `body` |
