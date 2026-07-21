@@ -1188,3 +1188,34 @@ func TestStatsDistinguishHTTPFromHTTPS(t *testing.T) {
 		t.Errorf("https views = %d, want 1 (have %v)", got["https"], got)
 	}
 }
+
+// The Host header is written by whoever is asking, so it is not evidence of
+// having come through tor. Trusting it let anyone fetch the site in
+// cleartext on port 80 — and be counted as a tor visitor — by sending the
+// onion name.
+func TestOnionClaimsNeedToComeFromTor(t *testing.T) {
+	srv, st, _ := testServer(t)
+	_, _ = st.SavePage("/index.gmi", []byte("# Home"), "", "t")
+	srv.Onion = func() string { return "abcdefghij.onion" } // as if one were running
+
+	ask := func(remote string) string {
+		r := httptest.NewRequest("GET", "http://abcdefghij.onion/", nil)
+		r.RemoteAddr = remote
+		return srv.proto(r)
+	}
+	if got := ask("127.0.0.1:41234"); got != "http+tor" {
+		t.Errorf("tor's own forward bucketed as %q, want http+tor", got)
+	}
+	if got := ask("[::1]:41234"); got != "http+tor" {
+		t.Errorf("ipv6 loopback bucketed as %q, want http+tor", got)
+	}
+	if got := ask("203.0.113.9:5555"); got != "http" {
+		t.Errorf("a public address claiming to be the onion bucketed as %q, want http", got)
+	}
+	// and an ordinary request is unaffected
+	plain := httptest.NewRequest("GET", "http://test.example/", nil)
+	plain.RemoteAddr = "203.0.113.9:5555"
+	if got := srv.proto(plain); got != "http" {
+		t.Errorf("ordinary request bucketed as %q", got)
+	}
+}

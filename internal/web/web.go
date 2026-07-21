@@ -225,8 +225,27 @@ func (s *Server) loggedIn(r *http.Request) bool {
 }
 
 // proto returns the stats bucket for a request.
+// viaOnion reports whether a request really arrived through the hidden
+// service. The Host header alone is not evidence — it is written by whoever
+// is asking — and trusting it meant anyone could fetch the site in cleartext
+// on port 80, and be counted as a tor visitor, by sending the onion name.
+// Tor forwards from the loopback interface (HiddenServicePort … 127.0.0.1),
+// so a request claiming to be onion traffic from a public address is not.
+func (s *Server) viaOnion(r *http.Request) bool {
+	o := s.onion()
+	if o == "" || !strings.EqualFold(stripPort(r.Host), o) {
+		return false
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 func (s *Server) proto(r *http.Request) string {
-	if o := s.onion(); o != "" && strings.EqualFold(stripPort(r.Host), o) {
+	if s.viaOnion(r) {
 		return "http+tor" // tor carries its own encryption; TLS on top is rare
 	}
 	// the stats table always had a column for https and nothing ever filled
@@ -471,7 +490,7 @@ func (s *Server) Serve() error {
 					fmt.Fprintln(w, "ok")
 					return
 				}
-				if o := s.onion(); o != "" && strings.EqualFold(stripPort(r.Host), o) {
+				if s.viaOnion(r) {
 					h.ServeHTTP(w, r)
 					return
 				}
