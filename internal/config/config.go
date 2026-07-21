@@ -125,10 +125,11 @@ type Config struct {
 	// Empty = the server's local time.
 	Timezone string `yaml:"timezone"`
 
-	// OAuthRedirectHosts are the extra hosts an MCP client may be sent back
-	// to after authorizing (e.g. "claude.ai"). Loopback addresses and this
-	// site's own hostname are always allowed; everything else must be named
-	// here, because a callback host is where the resulting credential lands.
+	// OAuthRedirectHosts are the hosts an MCP client may be sent back to
+	// after authorizing. Loopback addresses and this site's own hostname are
+	// always allowed; everything else must be named here, because a callback
+	// host is where the resulting admin credential lands. Defaults to the
+	// hosted Claude clients; set it to replace that list.
 	OAuthRedirectHosts []string `yaml:"oauth_redirect_hosts"`
 
 	// MaxUploadBytes caps a single file upload (web, api, mcp, titan).
@@ -156,6 +157,11 @@ func Default() *Config {
 		Feeds:     Feeds{Limit: 30},
 		NowFolder: "/now/",
 		Highlight: Highlight{Enabled: true, Style: "github", DarkStyle: "github-dark"},
+
+		// the hosted Claude clients this MCP endpoint exists for; desktop
+		// clients use loopback, which is always allowed. Setting the key in
+		// config replaces this list.
+		OAuthRedirectHosts: []string{"claude.ai", "claude.com"},
 
 		MaxUploadBytes: 10 << 20,
 		KeepVersions:   25,
@@ -348,8 +354,10 @@ func Sample(hostname, password, dataDir string) string {
 hostname: %s
 
 # Hosts an MCP client may be redirected back to after you authorize it.
-# Loopback and this site's own hostname are always allowed. Add a host here
-# only if you intend to hand that host admin access to this site.
+# Loopback and this site's own hostname are always allowed, as are the hosted
+# Claude clients by default. Setting this replaces that default list — a
+# callback host receives a credential with admin rights, so name only hosts
+# you mean to trust.
 # oauth_redirect_hosts:
 #   - claude.ai
 
