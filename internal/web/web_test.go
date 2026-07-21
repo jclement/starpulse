@@ -1128,3 +1128,25 @@ func TestLoginFormIsRecognizableToPasswordManagers(t *testing.T) {
 		}
 	}
 }
+
+// The editor's textarea paints no glyphs of its own — the highlight layer
+// beneath does — so it is tempting to make selected text transparent too.
+// Safari ignores that and paints its own selection foreground, which lands
+// as unreadable pale-on-orange. Selected text must name a real colour.
+func TestEditorSelectionIsReadable(t *testing.T) {
+	css, err := assets.ReadFile("assets/style.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(string(css), "\n") {
+		if !strings.Contains(line, "::selection") {
+			continue
+		}
+		if strings.Contains(line, "color: transparent") {
+			t.Errorf("a ::selection rule makes text transparent — Safari renders that unreadable:\n%s", strings.TrimSpace(line))
+		}
+	}
+	if !strings.Contains(string(css), "textarea::selection { background: var(--sel); color: var(--fg); }") {
+		t.Error("the editor's selection rule is missing or changed shape")
+	}
+}

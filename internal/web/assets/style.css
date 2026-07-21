@@ -532,7 +532,13 @@ a.newpost:hover { text-decoration: underline; }
   color: transparent;
   caret-color: var(--accent);
 }
-.ed-main.ed-highlighted textarea::selection { background: var(--sel); color: transparent; }
+/* The textarea paints no glyphs of its own — the highlighted layer beneath
+   shows them — so selected text asked for transparent glyphs too. Safari
+   ignores that and paints its own selection foreground, giving white on
+   orange. Selected text is now explicitly the normal foreground: the
+   metrics are identical, so it reads as that span losing its syntax colour
+   for as long as it is selected, which is legible everywhere. */
+.ed-main.ed-highlighted textarea::selection { background: var(--sel); color: var(--fg); }
 
 /* gemtext tokens */
 .g-h1 { color: var(--accent); font-weight: 600; }
