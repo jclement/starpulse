@@ -4,8 +4,10 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"html"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -130,17 +132,54 @@ func (s *Server) oauthServerMetadata(w http.ResponseWriter, r *http.Request) {
 
 // oauthRegister implements just enough dynamic client registration to hand
 // back the one fixed client this server has.
+//
+// RFC 7591 says the response returns all the client's registered metadata,
+// and clients check it: returning only a client_id, without echoing the
+// redirect_uris that were asked for, reads as "the server did not register
+// what I requested" and the flow is abandoned before it ever reaches
+// /oauth/authorize.
+//
+// Echoing them registers nothing and grants nothing. Registration is
+// unauthenticated, so a redirect_uri arriving here cannot be trusted to
+// authorize itself; where a code may actually be delivered is decided at
+// authorize time by validRedirect, against the operator's allowlist.
 func (s *Server) oauthRegister(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		jsonErr(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	jsonOut(w, http.StatusCreated, map[string]any{
+	var req struct {
+		RedirectURIs            []string `json:"redirect_uris"`
+		ClientName              string   `json:"client_name"`
+		Scope                   string   `json:"scope"`
+		GrantTypes              []string `json:"grant_types"`
+		ResponseTypes           []string `json:"response_types"`
+		TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
+	}
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 64<<10))
+	_ = json.Unmarshal(body, &req)
+
+	out := map[string]any{
 		"client_id":                  oauthClientID,
+		"client_id_issued_at":        time.Now().Unix(),
 		"token_endpoint_auth_method": "none",
 		"grant_types":                []string{"authorization_code", "refresh_token"},
 		"response_types":             []string{"code"},
-	})
+	}
+	if len(req.RedirectURIs) > 0 {
+		out["redirect_uris"] = req.RedirectURIs
+	}
+	if req.ClientName != "" {
+		out["client_name"] = req.ClientName
+	}
+	if req.Scope != "" {
+		out["scope"] = req.Scope
+	}
+	// which callbacks a client asks for is the thing that decides whether
+	// this flow can work at all, so it is worth being able to see it
+	s.Log.Info("oauth client registration",
+		"client_name", req.ClientName, "redirect_uris", strings.Join(req.RedirectURIs, " "))
+	jsonOut(w, http.StatusCreated, out)
 }
 
 // validRedirect decides where an authorization code may be delivered.

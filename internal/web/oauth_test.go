@@ -379,3 +379,53 @@ func TestAuthorizeRequiresPKCE(t *testing.T) {
 		}
 	}
 }
+
+// RFC 7591: a registration response returns the client's registered
+// metadata. Returning only a client_id, without echoing the redirect_uris
+// that were asked for, reads to the client as "the server did not register
+// what I requested" — it abandons the flow right there, having never
+// reached /oauth/authorize, which is exactly how this failed in the wild.
+func TestRegisterEchoesRequestedMetadata(t *testing.T) {
+	_, _, ts := testServer(t)
+	body := `{"redirect_uris":["https://claude.ai/api/mcp/auth_callback"],` +
+		`"client_name":"Claude","token_endpoint_auth_method":"none",` +
+		`"grant_types":["authorization_code","refresh_token"],"response_types":["code"]}`
+	resp, err := http.Post(ts.URL+"/oauth/register", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("register = %d", resp.StatusCode)
+	}
+	var got map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	uris, _ := got["redirect_uris"].([]any)
+	if len(uris) != 1 || uris[0] != "https://claude.ai/api/mcp/auth_callback" {
+		t.Errorf("redirect_uris not echoed: %v", got["redirect_uris"])
+	}
+	if got["client_name"] != "Claude" {
+		t.Errorf("client_name not echoed: %v", got["client_name"])
+	}
+	for _, k := range []string{"client_id", "client_id_issued_at", "token_endpoint_auth_method", "grant_types", "response_types"} {
+		if got[k] == nil {
+			t.Errorf("response missing %s", k)
+		}
+	}
+	// echoing is not authorizing: a callback host still has to pass the
+	// allowlist when a code is actually about to be handed over
+	r2, _ := http.Post(ts.URL+"/oauth/register", "application/json",
+		strings.NewReader(`{"redirect_uris":["https://evil.example/cb"],"client_name":"Evil"}`))
+	r2.Body.Close()
+	q := url.Values{"response_type": {"code"}, "client_id": {"mcp"},
+		"redirect_uri":          {"https://evil.example/cb"},
+		"code_challenge":        {"Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyMDA"},
+		"code_challenge_method": {"S256"}}
+	r3, _ := http.Get(ts.URL + "/oauth/authorize?" + q.Encode())
+	r3.Body.Close()
+	if r3.StatusCode != http.StatusBadRequest {
+		t.Errorf("registering a redirect_uri authorized it: %d", r3.StatusCode)
+	}
+}
