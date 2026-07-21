@@ -59,6 +59,7 @@ type pageLink struct {
 	URL   string
 	Label string
 	Line  int // first rendered line of this link
+	Lines int // how many lines it occupies, so a click can land on any of them
 }
 
 // renderDoc converts gemtext to styled terminal lines and collects links.
@@ -119,6 +120,7 @@ func renderDoc(st *styles, src string, width int, selected int) (lines []string,
 					lines = append(lines, "  "+ln)
 				}
 			}
+			links[idx].Lines = len(lines) - links[idx].Line
 		default:
 			lines = append(lines, wrap(st.text, l.Text)...)
 		}

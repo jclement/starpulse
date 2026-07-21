@@ -3,6 +3,7 @@ package sshui
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"fmt"
 	"io"
 	"net"
 	"regexp"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 	"github.com/charmbracelet/x/ansi"
@@ -575,4 +577,142 @@ func TestAdminPasswordIsThrottled(t *testing.T) {
 	} else {
 		c2.Close()
 	}
+}
+
+// Mouse: the wheel scrolls, a click on a link follows it, a click on the
+// bottom bar does what that key does.
+func TestMouseClicksLinksAndTheBar(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	_, _ = st.SavePage("/index.gmi", []byte("# Home\n\nsome words\n\n=> /about About page\n=> /other Other page"), "", "t")
+	_, _ = st.SavePage("/about.gmi", []byte("# About Me"), "", "t")
+	_, _ = st.SavePage("/other.gmi", []byte("# Other"), "", "t")
+
+	newM := func() *model {
+		m := newProtoModel(site.New(st), st, "test.example", false, 80, 24, lipgloss.DefaultRenderer(), "ssh")
+		m.navigate("/", false)
+		return m
+	}
+	click := func(m *model, x, y int) {
+		m.Update(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	}
+
+	// a click on the second link's row opens that link, not the first
+	m := newM()
+	if len(m.links) != 2 {
+		t.Fatalf("links = %d, want 2", len(m.links))
+	}
+	click(m, 4, 1+m.links[1].Line)
+	if m.url != "/other" {
+		t.Errorf("clicking the second link went to %q, want /other", m.url)
+	}
+
+	// a click on a line with no link changes nothing
+	m = newM()
+	before := m.url
+	click(m, 2, 1) // the "# Home" heading
+	if m.url != before {
+		t.Errorf("clicking a heading navigated to %q", m.url)
+	}
+
+	// a click on "home" in the bottom bar goes home
+	m = newM()
+	m.navigate("/about", false)
+	if m.url != "/about" {
+		t.Fatalf("setup: url = %q", m.url)
+	}
+	var homeX int
+	for _, z := range barZones(m.browsePairs()) {
+		if z.key == "h" {
+			homeX = z.x0 + 1
+		}
+	}
+	if homeX == 0 {
+		t.Fatal("no home zone on the bar")
+	}
+	click(m, homeX, m.height-1)
+	if m.url != "/" {
+		t.Errorf("clicking home went to %q, want /", m.url)
+	}
+
+	// the bar the mouse reads is the bar that is drawn: every zone's key
+	// must appear in the rendered footer
+	m = newM()
+	frame := ansi.Strip(m.View())
+	for _, z := range barZones(m.browsePairs()) {
+		if !strings.Contains(frame, z.key) {
+			t.Errorf("bar zone %q is not in the rendered frame", z.key)
+		}
+	}
+
+	// the wheel scrolls the page
+	_, _ = st.SavePage("/long.gmi", []byte("# Long\n\n"+strings.Repeat("line of text\n\n", 40)), "", "t")
+	m = newM()
+	m.navigate("/long", false)
+	if m.vp.YOffset != 0 {
+		t.Fatalf("setup: offset = %d", m.vp.YOffset)
+	}
+	m.Update(tea.MouseMsg{X: 5, Y: 5, Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown})
+	if m.vp.YOffset == 0 {
+		t.Error("the wheel did not scroll the page")
+	}
+	down := m.vp.YOffset
+	m.Update(tea.MouseMsg{X: 5, Y: 5, Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp})
+	if m.vp.YOffset >= down {
+		t.Error("the wheel did not scroll back up")
+	}
+}
+
+// A guest must not reach admin actions by clicking, either: the bar it is
+// shown carries no editing keys.
+func TestMouseBarRespectsGuest(t *testing.T) {
+	st, _ := store.Open(":memory:")
+	t.Cleanup(func() { st.Close() })
+	_, _ = st.SavePage("/index.gmi", []byte("# Home"), "", "t")
+
+	guest := newProtoModel(site.New(st), st, "h", false, 80, 24, lipgloss.DefaultRenderer(), "ssh")
+	for _, z := range barZones(guest.browsePairs()) {
+		switch z.key {
+		case "e", "c", "n", "x":
+			t.Errorf("guest bar offers %q", z.key)
+		}
+	}
+	admin := newProtoModel(site.New(st), st, "h", true, 80, 24, lipgloss.DefaultRenderer(), "ssh")
+	var sawEdit bool
+	for _, z := range barZones(admin.browsePairs()) {
+		if z.key == "e" {
+			sawEdit = true
+		}
+	}
+	if !sawEdit {
+		t.Error("admin bar has no edit key")
+	}
+}
+
+// End to end over a real ssh session: the model handling mouse messages is
+// no use unless the program actually asked the terminal to report them and
+// parses what comes back. This sends the escape sequence a terminal emits
+// for a left click and expects the link under it to open.
+func TestMouseOverARealSession(t *testing.T) {
+	_, st, addr := startServer(t)
+	_, _ = st.SavePage("/index.gmi", []byte("# SSH Home\n\n=> /about About page"), "", "t")
+
+	c, err := dial(t, addr, "guest", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	ts := openTUI(t, c)
+	ts.expect("SSH Home")
+	ts.expect("About page")
+
+	// SGR press/release on the link's row: rows are 1-based on the wire, the
+	// header occupies row 1, and the link is the third line of the document
+	const col, row = 5, 4
+	ts.send(fmt.Sprintf("\x1b[<0;%d;%dM", col, row))
+	ts.send(fmt.Sprintf("\x1b[<0;%d;%dm", col, row))
+	ts.expect("About Me")
 }

@@ -224,6 +224,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.refresh(false)
 		return m, nil
+	case tea.MouseMsg:
+		return m.updateMouse(msg)
 	case tea.KeyMsg:
 		switch m.mode {
 		case modeEdit:
@@ -719,12 +721,7 @@ func (m *model) viewBrowse() string {
 	default:
 		footer = m.statusLine()
 		if footer == "" {
-			pairs := []string{"tab", "links", "↵", "open", "b", "back", "g", "goto", "/", "search", "h", "home"}
-			if m.admin {
-				pairs = append(pairs, "e", "edit", "c", "new", "n", "now", "x", "del")
-			}
-			pairs = append(pairs, "q", "quit")
-			footer = m.bbsHelp(pairs...)
+			footer = m.bbsHelp(m.browsePairs()...)
 		}
 	}
 	return m.header(m.url) + "\n" + body + "\n" + footer

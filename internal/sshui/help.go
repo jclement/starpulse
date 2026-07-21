@@ -25,6 +25,13 @@ func helpDoc(admin bool) string {
 * e — edit the current page's source
 * c — create a new page
 * n — post a note into the notes folder (shown by {{now}} or {{latest}})
+
+## Mouse
+
+The wheel scrolls, a click follows a link, and a click on a word in the
+bottom bar does what that key does. While the mouse is being reported the
+terminal's own selection is taken over — hold Shift while dragging to select
+and copy as usual.
 * x — delete the current page (confirms; restorable from web history)
 
 In the editor: ctrl+s saves (a version is kept), ctrl+g shows this help, esc backs out (twice discards unsaved changes).

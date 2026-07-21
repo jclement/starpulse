@@ -124,6 +124,7 @@ func (s *Server) handle(conn net.Conn) {
 		tea.WithInput(reader),
 		tea.WithOutput(w),
 		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
 	)
 	_, err := p.Run()
 	if err != nil && err != tea.ErrProgramKilled {

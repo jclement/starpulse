@@ -268,6 +268,8 @@ the `key: value` special files — hand-rolled, no editor library.
   you are served each page's **raw source**, so an edit round-trips exactly
   instead of baking in inherited headers and expanded directives. A zero-byte
   upload deletes.
+- **SSH/telnet**: the wheel scrolls, clicks follow links and work the bottom
+  bar (hold Shift to select text as usual).
 - **SSH**: `ssh admin@host` → `e` edit, `c` new page, `n` note, `x` delete,
   `ctrl+s` save, `ctrl+g` syntax help, `g` fuzzy page jump, `/` search.
 - **REST**: `Authorization: Bearer <admin_password>` against `/api/pages`,
