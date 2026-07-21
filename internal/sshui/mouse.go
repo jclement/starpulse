@@ -91,8 +91,14 @@ func (m *model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 }
 
 // clickTarget maps a click on the bottom bar to the key it stands for.
+//
+// The bar is the last row of the frame, and the frame is header + body +
+// bar — one row shorter than the terminal, because the viewport is sized to
+// height-3. Deriving the row from the viewport rather than from the terminal
+// height is the difference between clicking the bar and clicking the blank
+// row under it.
 func (m *model) clickTarget(x, y int) (string, bool) {
-	if y != m.height-1 || m.status != "" {
+	if y != 1+m.vp.Height || m.status != "" {
 		return "", false // not the bar, or the bar is showing a status message
 	}
 	for _, z := range barZones(m.browsePairs()) {

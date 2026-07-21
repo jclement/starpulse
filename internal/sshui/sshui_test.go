@@ -633,7 +633,19 @@ func TestMouseClicksLinksAndTheBar(t *testing.T) {
 	if homeX == 0 {
 		t.Fatal("no home zone on the bar")
 	}
-	click(m, homeX, m.height-1)
+	// find the bar in the frame itself rather than assuming which row it is
+	// on: asserting a row number the code also assumed is how clicking the
+	// bar shipped broken with a passing test
+	barY := -1
+	for i, line := range strings.Split(m.View(), "\n") {
+		if strings.Contains(ansi.Strip(line), "quit") {
+			barY = i
+		}
+	}
+	if barY < 0 {
+		t.Fatal("no bottom bar in the frame")
+	}
+	click(m, homeX, barY)
 	if m.url != "/" {
 		t.Errorf("clicking home went to %q, want /", m.url)
 	}
