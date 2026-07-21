@@ -227,7 +227,13 @@ func (s *Server) loggedIn(r *http.Request) bool {
 // proto returns the stats bucket for a request.
 func (s *Server) proto(r *http.Request) string {
 	if o := s.onion(); o != "" && strings.EqualFold(stripPort(r.Host), o) {
-		return "http+tor"
+		return "http+tor" // tor carries its own encryption; TLS on top is rare
+	}
+	// the stats table always had a column for https and nothing ever filled
+	// it: every web request was bucketed as plain http, so an encrypted
+	// visit was indistinguishable from a cleartext one
+	if r.TLS != nil {
+		return "https"
 	}
 	return "http"
 }

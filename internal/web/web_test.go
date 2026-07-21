@@ -1152,3 +1152,39 @@ func TestEditorSelectionIsReadable(t *testing.T) {
 		t.Error("the editor's selection rule is missing or changed shape")
 	}
 }
+
+// The stats table has always had an https column and nothing ever filled it:
+// every web request bucketed as plain http, so an encrypted visit could not
+// be told from a cleartext one.
+func TestStatsDistinguishHTTPFromHTTPS(t *testing.T) {
+	srv, st, _ := testServer(t)
+	_, _ = st.SavePage("/index.gmi", []byte("# Home"), "", "t")
+
+	plain := httptest.NewServer(srv.Handler())
+	defer plain.Close()
+	secure := httptest.NewTLSServer(srv.Handler())
+	defer secure.Close()
+
+	resp, err := http.Get(plain.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	r2, err := secure.Client().Get(secure.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2.Body.Close()
+
+	got := map[string]int64{}
+	hits, _ := st.Stats()
+	for _, h := range hits {
+		got[h.Proto] += h.Count
+	}
+	if got["http"] != 1 {
+		t.Errorf("http views = %d, want 1 (have %v)", got["http"], got)
+	}
+	if got["https"] != 1 {
+		t.Errorf("https views = %d, want 1 (have %v)", got["https"], got)
+	}
+}
