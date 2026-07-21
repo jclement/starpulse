@@ -27,6 +27,18 @@ type Store struct {
 	db *sql.DB
 	// KeepVersions caps retained history per page (0 = unlimited).
 	KeepVersions int
+	// Loc is the timezone a creation timestamp is read in when it has to
+	// become a date. A post written at 6pm belongs to that evening's date in
+	// the author's zone, not to tomorrow because the server runs on UTC.
+	// Nil means the server's local time.
+	Loc *time.Location
+}
+
+func (s *Store) loc() *time.Location {
+	if s.Loc != nil {
+		return s.Loc
+	}
+	return time.Local
 }
 
 // Page is one stored page or file.
@@ -445,7 +457,7 @@ func (s *Store) EffectiveDate(m Meta, useCreated bool) string {
 		return m.Date
 	}
 	if useCreated {
-		return m.Created.Format("2006-01-02")
+		return m.Created.In(s.loc()).Format("2006-01-02")
 	}
 	return ""
 }

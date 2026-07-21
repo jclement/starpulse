@@ -60,6 +60,9 @@ func Serve(cfg *config.Config, logger *log.Logger) error {
 	}
 	defer st.Close()
 	st.KeepVersions = cfg.KeepVersions
+	if loc, err := cfg.Location(); err == nil {
+		st.Loc = loc // dates derived from creation times follow the site's zone
+	}
 	seedIfEmpty(st, logger)
 
 	sessions, secret := auth.NewSessions(st.GetSetting("session_secret"))

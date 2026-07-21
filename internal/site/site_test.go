@@ -332,3 +332,56 @@ func TestListEntryTitlesAndDirs(t *testing.T) {
 		t.Errorf("index leaked into listing:\n%s", g)
 	}
 }
+
+// A folder's .footer replaces the inherited one rather than adding to it, so
+// a page inside a folder had no way to ask for the site-wide footer without
+// copying it. Front matter can now name the file to use.
+func TestFrontMatterCanNameADifferentWrapper(t *testing.T) {
+	sy, st := testSite(t)
+	save(t, st, "/.header", "SITE HEADER")
+	save(t, st, "/.footer", "SITE FOOTER")
+	save(t, st, "/posts/.header", "POSTS HEADER")
+	save(t, st, "/posts/.footer", "=> /posts/ back to the gemlog")
+
+	// an ordinary entry inherits its folder's pair
+	save(t, st, "/posts/entry.gmi", "# Entry")
+	g := sy.Resolve("/posts/entry", "").Page.Gemtext
+	if !strings.Contains(g, "POSTS HEADER") || !strings.Contains(g, "back to the gemlog") {
+		t.Errorf("entry did not inherit the folder wrappers:\n%s", g)
+	}
+
+	// the index asks for the site-wide footer instead of its folder's
+	save(t, st, "/posts/index.gmi", "---\nfooter: /.footer\n---\n# Gemlog")
+	g = sy.Resolve("/posts/", "").Page.Gemtext
+	if strings.Contains(g, "back to the gemlog") {
+		t.Errorf("the folder footer was still applied:\n%s", g)
+	}
+	if !strings.Contains(g, "SITE FOOTER") {
+		t.Errorf("the named footer was not used:\n%s", g)
+	}
+	if !strings.Contains(g, "POSTS HEADER") {
+		t.Errorf("naming a footer disturbed the header:\n%s", g)
+	}
+
+	// "none" still means none, and wins over any path
+	save(t, st, "/posts/bare.gmi", "---\nheader: none\nfooter: none\n---\n# Bare")
+	g = sy.Resolve("/posts/bare", "").Page.Gemtext
+	if strings.Contains(g, "HEADER") || strings.Contains(g, "FOOTER") || strings.Contains(g, "back to") {
+		t.Errorf("footer: none did not suppress:\n%s", g)
+	}
+
+	// a named file that does not exist means none — not a silent fallback to
+	// the folder's, which would be the opposite of what was asked for
+	save(t, st, "/posts/typo.gmi", "---\nfooter: /.doesnotexist\n---\n# Typo")
+	g = sy.Resolve("/posts/typo", "").Page.Gemtext
+	if strings.Contains(g, "back to the gemlog") || strings.Contains(g, "SITE FOOTER") {
+		t.Errorf("a missing named footer fell back to something:\n%s", g)
+	}
+
+	// directives inside a named wrapper still expand
+	save(t, st, "/.footer", "seen {{count}} times")
+	g = sy.Resolve("/posts/", "").Page.Gemtext
+	if strings.Contains(g, "{{count}}") {
+		t.Errorf("directives in a named footer were not expanded:\n%s", g)
+	}
+}

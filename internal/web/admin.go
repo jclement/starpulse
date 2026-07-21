@@ -158,9 +158,10 @@ preformatted block (alt text after the first fence)
 <pre>---
 title: Custom title
 date: 2026-07-20
-header: none
-footer: none
+header: none          # or a path: /.header
+footer: /.footer      # use that file instead of this folder&#39;s
 ---</pre>
+<p class="dim">A folder&#39;s <code>.header</code>/<code>.footer</code> replaces the inherited one rather than adding to it, so naming a file is how a page asks for a different one — a gemlog index wanting the site-wide footer instead of its folder&#39;s &ldquo;back to the gemlog&rdquo; line.</p>
 <p class="dim">Dated filenames (<code>/posts/2026-07-20-hi.gmi</code>) sort newest-first in listings and feeds.</p>`
 
 var editorTpl = template.Must(template.New("editor").Parse(`<!DOCTYPE html>

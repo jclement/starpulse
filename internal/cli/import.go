@@ -30,6 +30,9 @@ func Import(cfg *config.Config, logger *log.Logger, dir string) error {
 	}
 	defer st.Close()
 	st.KeepVersions = cfg.KeepVersions
+	if loc, err := cfg.Location(); err == nil {
+		st.Loc = loc
+	}
 
 	root, err := filepath.Abs(dir)
 	if err != nil {

@@ -59,6 +59,7 @@ Lines are the unit — no inline markup.
 ## Special files (inherited down folders)
 
 * .header / .footer — gemtext included above/below every page in the folder and below
+  (a page can say "footer: none", or name another file: "footer: /.footer")
 * .css — CSS applied to the web rendering of that folder and below
 * .feed — marks the folder as publishing a feed (title, author, limit, prefix)
 

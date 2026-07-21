@@ -422,3 +422,31 @@ func TestFeedFoldersAndEffectiveDate(t *testing.T) {
 		t.Errorf("filename date should win: %q", d)
 	}
 }
+
+// A post written in the evening belongs to that evening's date in the
+// author's timezone. Deriving it from the server's zone dated late posts to
+// the following day on a UTC host — which is every VPS.
+func TestCreatedDateFollowsTheConfiguredZone(t *testing.T) {
+	st := openTest(t)
+	edmonton, err := time.LoadLocation("America/Edmonton")
+	if err != nil {
+		t.Skip("tzdata unavailable")
+	}
+	// 2026-07-20 18:30 in Edmonton is 2026-07-21 00:30 UTC
+	evening := time.Date(2026, 7, 21, 0, 30, 0, 0, time.UTC)
+	m := Meta{Created: evening}
+
+	st.Loc = time.UTC
+	if got := st.EffectiveDate(m, true); got != "2026-07-21" {
+		t.Errorf("UTC store dated it %q, want 2026-07-21", got)
+	}
+	st.Loc = edmonton
+	if got := st.EffectiveDate(m, true); got != "2026-07-20" {
+		t.Errorf("Edmonton store dated it %q, want 2026-07-20 — the evening it was written", got)
+	}
+	// an explicit date always wins over any zone
+	m.Date = "2020-01-02"
+	if got := st.EffectiveDate(m, true); got != "2020-01-02" {
+		t.Errorf("explicit date overridden: %q", got)
+	}
+}

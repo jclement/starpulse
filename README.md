@@ -187,6 +187,12 @@ automatically, so you cannot accidentally create an unviewable file.
 | `{{updated}}` | this page's last-edit date |
 | `{{version}}` | server build version |
 
+Front matter (optional, at the top of a page) sets `title:`, `date:`, and
+`header:`/`footer:` — either `none` to suppress the inherited one, or a path
+like `/.footer` to use a different file. A folder's `.header`/`.footer`
+replaces the inherited one rather than adding to it, so naming a file is how
+a page asks for the site-wide footer instead of its folder's.
+
 ---
 
 ## Posts and feeds

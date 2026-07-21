@@ -272,6 +272,7 @@ func TestFeedFolderCleanNames(t *testing.T) {
 		t.Errorf("marker author/limit not used: %+v", f)
 	}
 
+	st.Loc = time.UTC // the store derives dates in the site's zone; match it
 	b := &Builder{Store: st, Hostname: "ex.example", Loc: time.UTC}
 	out := b.Build(f, "https://ex.example")
 	for _, want := range []string{"Hello World", "Second Post"} {
@@ -287,8 +288,10 @@ func TestFeedFolderCleanNames(t *testing.T) {
 	if strings.Count(out, "<entry>") != 2 {
 		t.Errorf("entries = %d, want 2 (index.gmi should be excluded)", strings.Count(out, "<entry>"))
 	}
-	// today's date, from the database
-	today := time.Now().UTC().Format("2006-01-02")
+	// today's date, from the database, read in the same zone the store uses.
+	// Taking it from UTC while the store used local time made this fail for
+	// the hours of the day when the two disagree.
+	today := time.Now().In(time.UTC).Format("2006-01-02")
 	if !strings.Contains(out, "<published>"+today) {
 		t.Errorf("posts not dated from the database:\n%s", out)
 	}

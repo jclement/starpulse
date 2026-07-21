@@ -173,6 +173,10 @@ type frontMatter struct {
 	Title, Date string
 	NoHeader    bool
 	NoFooter    bool
+	// Header/Footer name a different file to use instead of the inherited
+	// one ("header: /.header"). Empty means "whatever this folder inherits".
+	Header string
+	Footer string
 }
 
 var fmKeyRe = regexp.MustCompile(`(?m)^(title|date|header|footer)\s*[:=]\s*(.+)$`)
@@ -205,8 +209,14 @@ func stripFrontMatter(src string) (string, frontMatter) {
 			fm.Date = val
 		case "header":
 			fm.NoHeader = off
+			if !off && strings.HasPrefix(val, "/") {
+				fm.Header = val
+			}
 		case "footer":
 			fm.NoFooter = off
+			if !off && strings.HasPrefix(val, "/") {
+				fm.Footer = val
+			}
 		}
 	}
 	return body, fm
@@ -227,11 +237,11 @@ func (s *Site) pageResult(urlPath string, pg *store.Page, proto string) *Result 
 
 	ctx := expandCtx{urlPath: urlPath, page: pg}
 	var parts []string
-	if h := s.nearestSpecial(pg.Path, ".header"); h != "" && !fm.NoHeader {
+	if h := s.wrapper(pg.Path, ".header", fm.Header, fm.NoHeader); h != "" {
 		parts = append(parts, s.expand(h, path.Dir(pg.Path), ctx, 0))
 	}
 	parts = append(parts, s.expand(body, baseDir, ctx, 0))
-	if f := s.nearestSpecial(pg.Path, ".footer"); f != "" && !fm.NoFooter {
+	if f := s.wrapper(pg.Path, ".footer", fm.Footer, fm.NoFooter); f != "" {
 		parts = append(parts, s.expand(f, path.Dir(pg.Path), ctx, 0))
 	}
 
@@ -277,11 +287,11 @@ func (s *Site) Preview(storePath, src string) string {
 	ctx := expandCtx{urlPath: urlPath, page: pg}
 
 	var parts []string
-	if h := s.nearestSpecial(storePath, ".header"); h != "" && !fm.NoHeader {
+	if h := s.wrapper(storePath, ".header", fm.Header, fm.NoHeader); h != "" {
 		parts = append(parts, s.expand(h, path.Dir(storePath), ctx, 0))
 	}
 	parts = append(parts, s.expand(body, baseDir, ctx, 0))
-	if f := s.nearestSpecial(storePath, ".footer"); f != "" && !fm.NoFooter {
+	if f := s.wrapper(storePath, ".footer", fm.Footer, fm.NoFooter); f != "" {
 		parts = append(parts, s.expand(f, path.Dir(storePath), ctx, 0))
 	}
 	return joinChunks(parts)
@@ -305,6 +315,26 @@ func canonicalKey(urlPath string) string {
 		return "/"
 	}
 	return k
+}
+
+// wrapper picks the header or footer a page is wrapped in: none if the page
+// switched it off, the named file if it named one, otherwise whatever the
+// folder inherits. Naming one exists because a folder's .footer replaces the
+// inherited one rather than adding to it, so a page that wants the site-wide
+// footer instead of its folder's had no way to say so without copying it.
+func (s *Site) wrapper(pagePath, name, override string, off bool) string {
+	if off {
+		return ""
+	}
+	if override != "" {
+		pg, err := s.Store.GetPage(override)
+		if err != nil {
+			return "" // a named file that is missing means none, not a fallback
+		}
+		body, _ := stripFrontMatter(string(pg.Content))
+		return body
+	}
+	return s.nearestSpecial(pagePath, name)
 }
 
 // nearestSpecial finds the closest special file (".header", ".footer",
