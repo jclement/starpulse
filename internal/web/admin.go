@@ -67,6 +67,7 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 }
 
 func (s *Server) adminRender(w http.ResponseWriter, r *http.Request, title, body string) {
+	noStore(w)
 	body += `<script src="/_/admin.js?v=` + site.BuildVersion + `" defer></script>`
 	s.render(w, r, http.StatusOK, title+" · admin · "+s.Cfg.Hostname, "admin", "", "", body)
 }
@@ -84,6 +85,16 @@ func adminNav() string {
 <a class="far" href="/">view site</a>
 <form class="inline" method="post" action="/logout"><button class="linkish" type="submit">logout</button></form>
 </nav>`
+}
+
+// noStore keeps admin screens off the browser's shelves. Closing the editor
+// and going back showed the listing as it was before the save — including a
+// page you had just created, missing — because the browser answered from its
+// own cache rather than asking. Admin pages describe state that changes
+// under you; they are never worth reusing.
+func noStore(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
 }
 
 // titleHint is the hover tooltip for a row: the full path, plus the page
@@ -244,7 +255,17 @@ func (s *Server) adminEdit(w http.ResponseWriter, r *http.Request) {
 			content = defaultThemeCSS()
 		}
 	}
-	if !isNew {
+	// Unpublished work wins, and is looked for FIRST: a page that exists
+	// only as a draft has no pages row, so checking that first bounced the
+	// author out to the listing with "no such page" — their own writing,
+	// saved, listed, and unreachable.
+	draft := false
+	if d, err := s.Store.GetDraft(p); err == nil && !d.Binary {
+		content = string(d.Content)
+		draft = true
+		isNew = false
+	}
+	if !isNew && !draft {
 		pg, err := s.Store.GetPage(p)
 		if err != nil {
 			http.Redirect(w, r, "/admin?msg="+url.QueryEscape("no such page: "+p), http.StatusSeeOther)
@@ -260,14 +281,6 @@ func (s *Server) adminEdit(w http.ResponseWriter, r *http.Request) {
 		}
 		content = string(pg.Content)
 	}
-	// unpublished work wins: editing a page that has a draft continues the
-	// draft rather than starting again from what is live
-	draft := false
-	if d, err := s.Store.GetDraft(p); err == nil && !d.Binary {
-		content = string(d.Content)
-		draft = true
-		isNew = false
-	}
 	title := p
 	if isNew {
 		title = "new page"
@@ -276,12 +289,20 @@ func (s *Server) adminEdit(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.Store.GetPage(p); err == nil {
 		published = true
 	}
+	noStore(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// a page that does not exist yet has nothing to rename from: sending a
+	// prefilled path back as "oldpath" made saving under a name you typed
+	// look like a rename of something that was never there
+	oldPath := p
+	if isNew && !draft {
+		oldPath = ""
+	}
 	_ = editorTpl.Execute(w, editorData{
 		Title:     title,
 		Host:      s.Cfg.Hostname,
 		Path:      p,
-		OldPath:   p,
+		OldPath:   oldPath,
 		ViewURL:   pageURL(p),
 		Content:   content,
 		AssetV:    site.BuildVersion,
@@ -305,12 +326,25 @@ func (s *Server) adminSave(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin?msg="+url.QueryEscape("invalid path: "+p), http.StatusSeeOther)
 		return
 	}
-	// a rename moves the page and its history rather than leaving a copy
+	// A rename moves the page and its history rather than leaving a copy —
+	// but only when there is something at the old path to move. Treating a
+	// name typed into a new page as a rename, and then abandoning the save
+	// when that rename failed, threw the author's work away.
+	renamed := ""
 	if oldPath := r.FormValue("oldpath"); oldPath != "" && oldPath != cp {
-		if _, err := s.Store.RenamePage(oldPath, cp, "web"); err != nil {
-			http.Redirect(w, r, "/admin/edit?path="+url.QueryEscape(oldPath)+
-				"&msg="+url.QueryEscape("rename failed: "+err.Error()), http.StatusSeeOther)
-			return
+		switch {
+		case s.Store.PageExists(oldPath):
+			if _, err := s.Store.RenamePage(oldPath, cp, "web"); err != nil {
+				renamed = "rename failed (" + err.Error() + "), saved as " + cp
+			}
+		case s.Store.HasDraft(oldPath):
+			// an unpublished page being renamed: carry the draft across and
+			// leave nothing behind at the old name
+			if d, err := s.Store.GetDraft(oldPath); err == nil {
+				if _, err := s.Store.SaveDraft(cp, d.Content, d.Mime, "web"); err == nil {
+					_ = s.Store.DiscardDraft(oldPath)
+				}
+			}
 		}
 	}
 	// the editor only produces text — never store it as an opaque blob
@@ -329,7 +363,11 @@ func (s *Server) adminSave(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin?msg="+url.QueryEscape("save failed: "+err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/admin/edit?path="+url.QueryEscape(cp), http.StatusSeeOther)
+	to := "/admin/edit?path=" + url.QueryEscape(cp)
+	if renamed != "" {
+		to += "&msg=" + url.QueryEscape(renamed)
+	}
+	http.Redirect(w, r, to, http.StatusSeeOther)
 }
 
 // adminDiscard throws away a draft. If the page was never published this
