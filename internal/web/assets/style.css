@@ -301,6 +301,10 @@ body.editor-body { height: 100vh; height: 100dvh; overflow: hidden; }
     z-index: 10;
   }
 }
+/* the fixed username on the sign-in form: present for password managers,
+   not something to fill in */
+form.admin input[readonly] { color: var(--dim); background: var(--pre-bg); }
+
 form.admin input:focus, form.admin textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
 
 .btn, form.admin button, form.inline button {

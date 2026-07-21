@@ -1076,3 +1076,55 @@ func (j *jarT) SetCookies(u *url.URL, cookies []*http.Cookie) {
 }
 
 func (j *jarT) Cookies(u *url.URL) []*http.Cookie { return j.cookies }
+
+// Password managers classify a form by its contents. A lone password box is
+// ambiguous — the username field is what a saved item attaches to, and the
+// autocomplete tokens are what separate "sign in" from "change password".
+// These are invisible in use and easy to drop in a redesign, so they are
+// pinned here.
+func TestLoginFormIsRecognizableToPasswordManagers(t *testing.T) {
+	_, _, ts := testServer(t)
+	resp, err := http.Get(ts.URL + "/login")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	body := string(b)
+
+	for _, want := range []string{
+		`method="post" action="/login"`,   // a real form, posting to a login URL
+		`autocomplete="username"`,         // something to attach the saved item to
+		`autocomplete="current-password"`, // sign in, not change-password
+		`type="password"`,
+		`<button type="submit">`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("login form missing %s", want)
+		}
+	}
+	// autocomplete="off" anywhere on this form defeats the whole point
+	if strings.Contains(body, `autocomplete="off"`) {
+		t.Error("login form disables autocomplete")
+	}
+
+	// the username is fixed, so it must not be able to lock anyone out: the
+	// password alone decides, whatever the field says
+	for _, user := range []string{"admin", "", "someone-else"} {
+		form := url.Values{"password": {testPassword}}
+		if user != "" {
+			form.Set("username", user)
+		}
+		client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}}
+		r, err := client.PostForm(ts.URL+"/login", form)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Body.Close()
+		if r.StatusCode != http.StatusSeeOther {
+			t.Errorf("username %q blocked a correct password: %d", user, r.StatusCode)
+		}
+	}
+}

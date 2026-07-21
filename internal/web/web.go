@@ -397,16 +397,24 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, errMsg string) {
 	var b strings.Builder
-	b.WriteString("<h1>Login</h1>\n")
+	b.WriteString("<h1>Sign in</h1>\n")
 	if errMsg != "" {
 		fmt.Fprintf(&b, `<p class="flash err">%s</p>`+"\n", html.EscapeString(errMsg))
 	}
+	// Password managers classify a form by what it contains, and a lone
+	// password box with no autocomplete hints is ambiguous — 1Password and
+	// Safari want a username field to attach the saved item to, and the
+	// autocomplete tokens to tell "sign in here" from "change your password
+	// here". There is only one account, so the username is fixed and shown
+	// rather than asked for; the server does not read it.
 	b.WriteString(`<form class="admin" method="post" action="/login">
+<label for="username">user</label>
+<input type="text" id="username" name="username" value="admin" autocomplete="username" spellcheck="false" autocapitalize="none" readonly>
 <label for="password">admin password</label>
-<input type="password" id="password" name="password" autofocus>
-<div class="bar"><button type="submit">login</button></div>
+<input type="password" id="password" name="password" autocomplete="current-password" autofocus>
+<div class="bar"><button type="submit">sign in</button></div>
 </form>`)
-	s.render(w, r, http.StatusOK, "login · "+s.Cfg.Hostname, "login", "", "", b.String())
+	s.render(w, r, http.StatusOK, "Sign in · "+s.Cfg.Hostname, "login", "", "", b.String())
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
