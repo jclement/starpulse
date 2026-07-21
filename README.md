@@ -96,8 +96,13 @@ starpulse version
 - **Notes**: short entries. A note *is* a page — the only difference is that
   the server names the file for you — so it gets history, search and feeds
   like everything else.
+- **Drafts**: save without publishing. The site keeps showing the published
+  version, and a never-published page is absent everywhere — no 404 hunting,
+  no listing leaks, because drafts live in their own table that nothing
+  public reads. Publishing is one entry in the page's history.
 - **Backups**: download the whole site as a zip of ordinary files, restore it
-  by merging or replacing. Keys and certificates optional, and never restored.
+  by merging or replacing. Drafts travel too, and come back as drafts. Keys
+  and certificates optional, and never restored.
 - **Syntax highlighting** for code blocks, rendered server-side.
 - **Automatic HTTPS**, and a **self-managed tor hidden service** forwarding
   every door you enable.

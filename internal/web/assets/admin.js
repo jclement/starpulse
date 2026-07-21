@@ -58,19 +58,30 @@
     }
   });
 
-  function save() {
+  function save(publish) {
     var path = pathInput.value.trim();
     if (!path) {
       setStatus("path required", true);
       pathInput.focus();
       return;
     }
-    setStatus("saving…");
-    fetch("/admin/save", { method: "POST", body: new FormData(form) })
+    setStatus(publish ? "publishing…" : "saving…");
+    // FormData does not include the button that submitted the form, and the
+    // difference between these two buttons is the difference between the
+    // world seeing this and not
+    var body = new FormData(form);
+    body.set("publish", publish ? "1" : "0");
+    fetch("/admin/save", { method: "POST", body: body })
       .then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
         dirty = false;
-        setStatus("saved " + new Date().toLocaleTimeString());
+        if (publish) {
+          // the draft is gone and the badge with it: reload so the page
+          // says what is actually true now
+          window.location = "/admin/edit?path=" + encodeURIComponent(path);
+          return;
+        }
+        setStatus("saved draft " + new Date().toLocaleTimeString());
         // a rename (or first save) becomes the new baseline
         var old = form.querySelector('input[name="oldpath"]');
         if (!old) {
@@ -82,18 +93,26 @@
         old.value = path;
       })
       .catch(function (err) {
-        setStatus("save failed: " + err.message, true);
+        setStatus((publish ? "publish" : "save") + " failed: " + err.message, true);
       });
   }
 
   form.addEventListener("submit", function (e) {
+    // discard posts to its own action: let the browser do it and follow the
+    // redirect, rather than swallowing it as a save
+    var to = e.submitter && e.submitter.getAttribute("formaction");
+    if (to) {
+      dirty = false; // the draft is going away; do not warn about leaving
+      return;
+    }
     e.preventDefault();
-    save();
+    save(e.submitter && e.submitter.value === "1");
   });
   document.addEventListener("keydown", function (e) {
     if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+      // ctrl-s is the safe one: it saves a draft, never publishes
       e.preventDefault();
-      save();
+      save(false);
     }
     if (e.key === "Escape" && !pane.hidden) {
       setPreview(false);
@@ -220,6 +239,20 @@
       input.value = "";
       apply();
     }
+  });
+})();
+
+// discarding a draft of a page that was never published removes it outright,
+// and unlike a delete there is no history to recover it from
+(function () {
+  var btn = document.getElementById("ed-discard");
+  if (!btn) return;
+  btn.addEventListener("click", function (e) {
+    var p = btn.getAttribute("data-path") || "this page";
+    var msg = btn.getAttribute("data-published") === "true"
+      ? "Discard the draft of " + p + "?\n\nThe published version stays as it is."
+      : "Discard " + p + "?\n\nIt was never published, so this removes it entirely.";
+    if (!confirm(msg)) e.preventDefault();
   });
 })();
 

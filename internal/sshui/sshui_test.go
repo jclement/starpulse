@@ -834,3 +834,33 @@ func TestExternalLinksAreHyperlinksNotFetches(t *testing.T) {
 		t.Errorf("internal link went to %q, want /about", m.url)
 	}
 }
+
+// The terminal browsers read pages, so a draft is invisible there too —
+// including to an admin, who has the web editor for unpublished work.
+func TestDraftsAreInvisibleInTheTUI(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	_, _ = st.SavePage("/index.gmi", []byte("# Home\n\n=> /live Live page"), "", "t")
+	_, _ = st.SavePage("/live.gmi", []byte("# Live\n\nPUBLISHED-BODY"), "", "t")
+	_, _ = st.SaveDraft("/live.gmi", []byte("# Live\n\nREWRITTEN-BODY"), "", "web")
+	_, _ = st.SaveDraft("/secret.gmi", []byte("# Secret"), "", "web")
+
+	for _, admin := range []bool{false, true} {
+		m := newProtoModel(site.New(st), st, "h", admin, 80, 24, lipgloss.DefaultRenderer(), "ssh")
+		m.navigate("/live", false)
+		body := ansi.Strip(m.View())
+		if !strings.Contains(body, "PUBLISHED-BODY") {
+			t.Errorf("admin=%v: published page not shown:\n%s", admin, body)
+		}
+		if strings.Contains(body, "REWRITTEN-BODY") {
+			t.Errorf("admin=%v: the TUI served a draft", admin)
+		}
+		m.navigate("/secret", false)
+		if !strings.Contains(m.status, "not found") {
+			t.Errorf("admin=%v: a draft-only page resolved: %q", admin, m.status)
+		}
+	}
+}

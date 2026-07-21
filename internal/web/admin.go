@@ -31,6 +31,7 @@ func (s *Server) adminRoutes() []route {
 		{"/admin", s.adminHome},
 		{"/admin/edit", s.adminEdit},
 		{"/admin/save", s.adminSave},
+		{"/admin/discard", s.adminDiscard},
 		{"/admin/delete", s.adminDelete},
 		{"/admin/versions", s.adminVersions},
 		{"/admin/version", s.adminVersion},
@@ -179,11 +180,14 @@ var editorTpl = template.Must(template.New("editor").Parse(`<!DOCTYPE html>
 <input type="text" name="path" id="path" value="{{.Path}}" placeholder="/about.gmi" spellcheck="false" autocomplete="off"{{if not .Path}} autofocus{{end}}>
 {{if .OldPath}}<input type="hidden" name="oldpath" value="{{.OldPath}}">{{end}}
 <span id="ed-status" class="dim"></span>
+{{if .Draft}}<span class="badge draft" title="unpublished work — the site still shows the published version">draft</span>{{end}}
 <span class="ed-spacer"></span>
-<button type="submit">save</button>
+<button type="submit" name="publish" value="0" id="ed-save" title="keep this to yourself; the site keeps showing the published version">save draft</button>
+<button type="submit" name="publish" value="1" id="ed-publish" class="publish" title="make this what the site shows">publish</button>
 <button type="button" id="pv-toggle" hidden>preview</button>
 {{.Help}}
-{{if .OldPath}}<a class="btn quiet" href="/admin/versions?path={{.OldPath}}">history</a><a class="btn quiet" href="{{.ViewURL}}">view</a>{{end}}
+{{if .Draft}}<button class="btn quiet" id="ed-discard" type="submit" formaction="/admin/discard" formmethod="post" data-published="{{.Published}}" data-path="{{.Path}}" title="throw the draft away">discard</button>{{end}}
+{{if .OldPath}}<a class="btn quiet" href="/admin/versions?path={{.OldPath}}">history</a>{{if .Published}}<a class="btn quiet" href="{{.ViewURL}}">view</a>{{end}}{{end}}
 <a class="btn quiet" id="ed-close" href="/admin">close</a>
 </div>
 <div class="ed-main">
@@ -209,6 +213,11 @@ type editorData struct {
 	Content string
 	AssetV  string
 	Help    template.HTML
+	// Draft: this page has unpublished work, and it is what is loaded.
+	// Published: a live version exists — so "view" shows something, and
+	// discarding leaves that behind rather than removing the page.
+	Draft     bool
+	Published bool
 }
 
 func (s *Server) adminEdit(w http.ResponseWriter, r *http.Request) {
@@ -251,20 +260,34 @@ func (s *Server) adminEdit(w http.ResponseWriter, r *http.Request) {
 		}
 		content = string(pg.Content)
 	}
+	// unpublished work wins: editing a page that has a draft continues the
+	// draft rather than starting again from what is live
+	draft := false
+	if d, err := s.Store.GetDraft(p); err == nil && !d.Binary {
+		content = string(d.Content)
+		draft = true
+		isNew = false
+	}
 	title := p
 	if isNew {
 		title = "new page"
 	}
+	published := false
+	if _, err := s.Store.GetPage(p); err == nil {
+		published = true
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = editorTpl.Execute(w, editorData{
-		Title:   title,
-		Host:    s.Cfg.Hostname,
-		Path:    p,
-		OldPath: p,
-		ViewURL: pageURL(p),
-		Content: content,
-		AssetV:  site.BuildVersion,
-		Help:    template.HTML(editorHelpHTML),
+		Title:     title,
+		Host:      s.Cfg.Hostname,
+		Path:      p,
+		OldPath:   p,
+		ViewURL:   pageURL(p),
+		Content:   content,
+		AssetV:    site.BuildVersion,
+		Help:      template.HTML(editorHelpHTML),
+		Draft:     draft,
+		Published: published,
 	})
 }
 
@@ -292,11 +315,43 @@ func (s *Server) adminSave(w http.ResponseWriter, r *http.Request) {
 	}
 	// the editor only produces text — never store it as an opaque blob
 	mime := store.TextMime(store.MimeFor(cp))
-	if _, err := s.Store.SavePage(cp, []byte(content), mime, "web"); err != nil {
+
+	// "save" keeps the work to yourself; "publish" is what the world sees.
+	// Publishing writes the page directly rather than saving a draft and
+	// promoting it, so it is one commit in the page's history either way.
+	if r.FormValue("publish") == "1" {
+		if _, err := s.Store.SavePage(cp, []byte(content), mime, "web"); err != nil {
+			http.Redirect(w, r, "/admin?msg="+url.QueryEscape("publish failed: "+err.Error()), http.StatusSeeOther)
+			return
+		}
+		_ = s.Store.DiscardDraft(cp) // no error if there was never a draft
+	} else if _, err := s.Store.SaveDraft(cp, []byte(content), mime, "web"); err != nil {
 		http.Redirect(w, r, "/admin?msg="+url.QueryEscape("save failed: "+err.Error()), http.StatusSeeOther)
 		return
 	}
 	http.Redirect(w, r, "/admin/edit?path="+url.QueryEscape(cp), http.StatusSeeOther)
+}
+
+// adminDiscard throws away a draft. If the page was never published this
+// removes it entirely, which is what discarding means for something that
+// only ever existed unpublished.
+func (s *Server) adminDiscard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	p := r.FormValue("path")
+	msg := "discarded the draft of " + p
+	if _, err := s.Store.GetPage(p); err != nil {
+		msg = "discarded " + p + " — it was never published"
+	}
+	if err := s.Store.DiscardDraft(p); err != nil {
+		http.Redirect(w, r, "/admin/edit?path="+url.QueryEscape(p)+
+			"&msg="+url.QueryEscape("nothing to discard"), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/admin?dir="+url.QueryEscape(pageFolder(p))+
+		"&msg="+url.QueryEscape(msg), http.StatusSeeOther)
 }
 
 func (s *Server) adminDelete(w http.ResponseWriter, r *http.Request) {

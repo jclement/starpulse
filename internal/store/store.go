@@ -140,7 +140,7 @@ func Open(dbPath string) (*Store, error) {
 	}
 	// modernc sqlite is happiest with one writer connection
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema); err != nil {
+	if _, err := db.Exec(schema + draftSchema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("initializing schema: %w", err)
 	}
@@ -665,6 +665,9 @@ func (s *Store) DeletePage(p string, author string) error {
 	if _, err := tx.Exec(`DELETE FROM pages_fts WHERE rowid = ?`, id); err != nil {
 		return err
 	}
+	if err := dropDraft(tx, cp); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -757,6 +760,10 @@ func (s *Store) RenamePage(oldPath, newPath, author string) (*Page, error) {
 	}
 	// keep the search index pointing at the right path
 	if _, err := tx.Exec(`UPDATE pages_fts SET path = ? WHERE rowid = ?`, np, id); err != nil {
+		return nil, err
+	}
+	// unpublished work follows the page it belongs to
+	if err := renameDraft(tx, op, np); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {

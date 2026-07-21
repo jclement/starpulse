@@ -287,3 +287,78 @@ func keysOf(m map[string]string) []string {
 	}
 	return out
 }
+
+// Unpublished work is the least replaceable thing on the site, so it travels
+// in the backup — but under its own folder, and it comes back a draft.
+// Restoring must never publish something its author had not.
+func TestBackupCarriesDraftsAsDrafts(t *testing.T) {
+	_, st, ts := testServer(t)
+	_, _ = st.SavePage("/live.gmi", []byte("# Live"), "", "t")
+	_, _ = st.SaveDraft("/live.gmi", []byte("# Live\n\nin progress"), "", "web")
+	_, _ = st.SaveDraft("/unborn.gmi", []byte("# Unborn"), "", "web")
+	client := login(t, ts, testPassword)
+
+	resp, err := client.Get(ts.URL + "/admin/backup.zip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, f := range zr.File {
+		names[f.Name] = true
+	}
+	for _, want := range []string{"content/live.gmi", "drafts/live.gmi", "drafts/unborn.gmi"} {
+		if !names[want] {
+			t.Errorf("backup missing %s (have %v)", want, keysOf(map[string]string{}))
+		}
+	}
+	if names["content/unborn.gmi"] {
+		t.Error("an unpublished page was backed up as published content")
+	}
+
+	// wipe and restore: the draft must land as a draft, not as a page
+	_ = st.DiscardDraft("/live.gmi")
+	_ = st.DiscardDraft("/unborn.gmi")
+	_ = st.DeletePage("/live.gmi", "t")
+	postZip(t, client, ts.URL, "merge", data)
+
+	if _, err := st.GetPage("/unborn.gmi"); err == nil {
+		t.Error("restoring published a draft")
+	}
+	if !st.HasDraft("/unborn.gmi") {
+		t.Error("the draft did not come back")
+	}
+	d, err := st.GetDraft("/live.gmi")
+	if err != nil || !strings.Contains(string(d.Content), "in progress") {
+		t.Errorf("draft of a published page did not come back: %v", err)
+	}
+	if pg, err := st.GetPage("/live.gmi"); err != nil || strings.Contains(string(pg.Content), "in progress") {
+		t.Errorf("published page wrong after restore: %v %q", err, pg.Content)
+	}
+}
+
+func TestBackupDraftPathsRejectEscapes(t *testing.T) {
+	for _, bad := range []string{
+		"drafts/../../etc/passwd", "drafts/../out.gmi", "/etc/passwd",
+		"content/a.gmi", "BACKUP.txt", "drafts/",
+	} {
+		if p, ok := backupDraftPath(bad); ok {
+			t.Errorf("accepted %q as %q", bad, p)
+		}
+	}
+	for name, want := range map[string]string{
+		"drafts/a.gmi":           "/a.gmi",
+		"drafts/posts/b.gmi":     "/posts/b.gmi",
+		"site_2026/drafts/c.gmi": "/c.gmi",
+	} {
+		if p, ok := backupDraftPath(name); !ok || p != want {
+			t.Errorf("backupDraftPath(%q) = %q,%v want %q", name, p, ok, want)
+		}
+	}
+}

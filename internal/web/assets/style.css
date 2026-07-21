@@ -245,6 +245,14 @@ body.editor-body { height: 100vh; height: 100dvh; overflow: hidden; }
   color: var(--bg);
   background: var(--accent);
 }
+/* two verbs, and only one of them is visible to the world */
+.ed-bar button#ed-save {
+  background: var(--pre-bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+}
+.ed-bar button#ed-save:hover { border-color: var(--accent); }
+
 .ed-bar .btn.quiet, .ed-bar button.quiet, .ed-bar #pv-toggle {
   background: var(--bg);
   color: var(--fg);
@@ -607,6 +615,21 @@ table.browse tr.special td:first-child a { color: var(--dim); }
   vertical-align: 0.1em;
 }
 p.newhere { margin: 1em 0 2em; text-align: right; }
+
+/* a draft is unpublished work: marked, never alarming */
+.badge.draft {
+  color: #8a6d1f;
+  border-color: #d8c48a;
+  background: color-mix(in srgb, #d8c48a 18%, transparent);
+}
+@media (prefers-color-scheme: dark) {
+  .badge.draft { color: #d8c48a; border-color: #6a5a2a; }
+}
+:root[data-theme="light"] .badge.draft { color: #8a6d1f; border-color: #d8c48a; }
+:root[data-theme="dark"] .badge.draft { color: #d8c48a; border-color: #6a5a2a; }
+
+/* in the editor bar the badge sits beside the status text */
+.ed-bar .badge.draft { font-size: 0.72em; padding: 0.15em 0.5em; }
 
 /* checkbox / radio rows: the control sits on the same line as its label,
    which the stacked form.admin label rule would otherwise break apart */

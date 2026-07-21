@@ -30,6 +30,27 @@ func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	// draft-only pages have no pages row, so the browser has to union both
+	// tables or work you started yesterday is invisible until you publish it
+	drafts, err := s.Store.ListDrafts()
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	published := map[string]bool{}
+	for _, m := range metas {
+		published[m.Path] = true
+	}
+	// per request, not on the server: two admins browsing at once would
+	// otherwise scribble over each other's view
+	draftPaths := map[string]bool{}
+	for _, d := range drafts {
+		draftPaths[d.Path] = true
+		if !published[d.Path] {
+			metas = append(metas, d)
+		}
+	}
+
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	dir := normFolder(r.URL.Query().Get("dir"))
 
@@ -50,9 +71,9 @@ func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
 
 	b.WriteString(`<div id="browse">` + "\n")
 	if q != "" {
-		s.searchList(&b, metas, q)
+		s.searchList(&b, metas, q, draftPaths)
 	} else {
-		s.folderScreen(&b, metas, dir)
+		s.folderScreen(&b, metas, dir, draftPaths)
 	}
 	b.WriteString("</div>\n")
 	b.WriteString(pageIndex(metas))
@@ -60,7 +81,7 @@ func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
 }
 
 // folderScreen renders one folder: settings, subfolders, then files.
-func (s *Server) folderScreen(b *strings.Builder, metas []store.Meta, dir string) {
+func (s *Server) folderScreen(b *strings.Builder, metas []store.Meta, dir string, draftPaths map[string]bool) {
 	subCount := map[string]int{}
 	var subs []string
 	var files []store.Meta
@@ -101,7 +122,7 @@ func (s *Server) folderScreen(b *strings.Builder, metas []store.Meta, dir string
 			subCount[sub], newLink(sub))
 	}
 	for _, m := range files {
-		s.fileRow(b, m, m.Path[len(dir):])
+		s.fileRow(b, m, m.Path[len(dir):], draftPaths[m.Path])
 	}
 	if len(subs) == 0 && len(files) == 0 {
 		b.WriteString(`<tr><td colspan="3" class="dim">empty folder</td></tr>` + "\n")
@@ -148,7 +169,7 @@ func (s *Server) sortFiles(files []store.Meta, dir string) {
 
 // fileRow is one page: its name links to the editor, which is where history
 // and everything else already lives.
-func (s *Server) fileRow(b *strings.Builder, m store.Meta, label string) {
+func (s *Server) fileRow(b *strings.Builder, m store.Meta, label string, draft bool) {
 	view := ""
 	if !store.Hidden(m.Path) {
 		target := m.Path
@@ -161,12 +182,21 @@ func (s *Server) fileRow(b *strings.Builder, m store.Meta, label string) {
 	if store.Hidden(m.Path) {
 		cls += " special" // .feed, .header, .footer, .css: machinery, not content
 	}
-	fmt.Fprintf(b, `<tr class="%s"><td><a href="/admin/edit?path=%s" title="%s">%s</a></td>`+
+	badge := ""
+	if draft {
+		badge = ` <span class="badge draft">draft</span>`
+		view = "" // there may be nothing published to view
+		if _, err := s.Store.GetPage(m.Path); err == nil {
+			view = fmt.Sprintf(`<a href="%s" title="the published version">view</a> <span class="dim">·</span> `,
+				html.EscapeString(pageURL(m.Path)))
+		}
+	}
+	fmt.Fprintf(b, `<tr class="%s"><td><a href="/admin/edit?path=%s" title="%s">%s</td>`+
 		`<td class="dim num">%s</td>`+
 		`<td class="acts dim">%s<form class="inline del" method="post" action="/admin/delete">`+
 		`<input type="hidden" name="path" value="%s"><input type="hidden" name="dir" value="%s">`+
 		`<button class="linkish" type="submit" data-path="%s">delete</button></form></td></tr>`+"\n",
-		cls, url.QueryEscape(m.Path), html.EscapeString(titleHint(m.Path, m.Title)), html.EscapeString(label),
+		cls, url.QueryEscape(m.Path), html.EscapeString(titleHint(m.Path, m.Title)), html.EscapeString(label)+"</a>"+badge,
 		html.EscapeString(s.whenStr(m.Updated)),
 		view, html.EscapeString(m.Path), html.EscapeString(pageFolder(m.Path)), html.EscapeString(m.Path))
 }
@@ -289,7 +319,7 @@ func newLink(dir string) string {
 
 // searchList is the flat, folder-qualified result list — the no-JS half of
 // the filter, and the shape the script reproduces live.
-func (s *Server) searchList(b *strings.Builder, metas []store.Meta, q string) {
+func (s *Server) searchList(b *strings.Builder, metas []store.Meta, q string, draftPaths map[string]bool) {
 	terms := strings.Fields(strings.ToLower(q))
 	b.WriteString(`<table class="admin browse">` + "\n")
 	n := 0
@@ -306,7 +336,7 @@ func (s *Server) searchList(b *strings.Builder, metas []store.Meta, q string) {
 			continue
 		}
 		n++
-		s.fileRow(b, m, m.Path)
+		s.fileRow(b, m, m.Path, draftPaths[m.Path])
 	}
 	if n == 0 {
 		b.WriteString(`<tr><td colspan="3" class="dim">nothing matches</td></tr>` + "\n")

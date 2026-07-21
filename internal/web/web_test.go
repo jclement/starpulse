@@ -739,13 +739,15 @@ func TestLoginFlow(t *testing.T) {
 	}
 }
 
+// The published lifecycle: publish, edit, rename, delete, restore. Every
+// save here says publish=1, because a bare save is now a draft.
 func TestAdminSaveDeleteRestore(t *testing.T) {
 	_, st, ts := testServer(t)
 	client := login(t, ts, testPassword)
 
 	// create
 	resp, err := client.PostForm(ts.URL+"/admin/save", url.Values{
-		"path": {"/made.gmi"}, "content": {"# Made\r\nin a form"},
+		"path": {"/made.gmi"}, "content": {"# Made\r\nin a form"}, "publish": {"1"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -758,13 +760,13 @@ func TestAdminSaveDeleteRestore(t *testing.T) {
 
 	// edit → snapshots version
 	resp, _ = client.PostForm(ts.URL+"/admin/save", url.Values{
-		"path": {"/made.gmi"}, "oldpath": {"/made.gmi"}, "content": {"# Made v2"},
+		"path": {"/made.gmi"}, "oldpath": {"/made.gmi"}, "content": {"# Made v2"}, "publish": {"1"},
 	})
 	resp.Body.Close()
 
 	// rename moves content, deletes old
 	resp, _ = client.PostForm(ts.URL+"/admin/save", url.Values{
-		"path": {"/renamed.gmi"}, "oldpath": {"/made.gmi"}, "content": {"# Renamed"},
+		"path": {"/renamed.gmi"}, "oldpath": {"/made.gmi"}, "content": {"# Renamed"}, "publish": {"1"},
 	})
 	resp.Body.Close()
 	if _, err := st.GetPage("/made.gmi"); err == nil {

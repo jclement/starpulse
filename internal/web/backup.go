@@ -30,6 +30,7 @@ import (
 
 const (
 	backupContentDir = "content/"
+	backupDraftDir   = "drafts/"
 	backupKeysDir    = "keys/"
 	backupManifest   = "BACKUP.txt"
 )
@@ -45,6 +46,10 @@ func (s *Server) adminBackup(w http.ResponseWriter, r *http.Request) {
 	for _, m := range metas {
 		total += m.Size
 	}
+	draftNote := ""
+	if drafts, err := s.Store.ListDrafts(); err == nil && len(drafts) > 0 {
+		draftNote = fmt.Sprintf(` · %d unpublished draft(s), included`, len(drafts))
+	}
 	var b strings.Builder
 	b.WriteString("<h1>Backup</h1>\n" + adminNav())
 	if msg := r.URL.Query().Get("msg"); msg != "" {
@@ -53,10 +58,10 @@ func (s *Server) adminBackup(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(&b, `<p class="dim">A zip of plain files: <code>content/about.gmi</code> is the page at <code>/about.gmi</code>. Version history and view counts stay behind — this is the content, not the database.</p>`)
 
 	fmt.Fprintf(&b, `<form class="admin" method="get" action="/admin/backup.zip">
-<p>%d pages · %s</p>
+<p>%d pages · %s%s</p>
 <label class="check"><input type="checkbox" name="keys" value="1"><span>include keys and certificates <span class="dim">— tor hidden-service key, TLS certs, ssh host key. Restoring ignores them; keep this copy somewhere safe.</span></span></label>
 <div class="bar"><button type="submit">download backup</button></div>
-</form>`, len(metas), html.EscapeString(sizeStr(total)))
+</form>`, len(metas), html.EscapeString(sizeStr(total)), draftNote)
 
 	fmt.Fprintf(&b, `<h2>Restore</h2>
 <form class="admin" method="post" action="/admin/backup/restore" enctype="multipart/form-data">
@@ -126,6 +131,22 @@ func (s *Server) adminBackupZip(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := add(backupContentDir+strings.TrimPrefix(pg.Path, "/"), pg.Updated, pg.Content); err != nil {
 			return // client went away; nothing useful to report
+		}
+	}
+
+	// Unpublished work is the least replaceable thing here, so it travels
+	// too — under its own folder, so restoring cannot mistake a draft for a
+	// published page.
+	if drafts, err := s.Store.ListDrafts(); err == nil && len(drafts) > 0 {
+		fmt.Fprintf(&manifest, "drafts: %d (restored as drafts)\n", len(drafts))
+		for _, m := range drafts {
+			d, err := s.Store.GetDraft(m.Path)
+			if err != nil {
+				continue
+			}
+			if err := add(backupDraftDir+strings.TrimPrefix(d.Path, "/"), d.Updated, d.Content); err != nil {
+				return
+			}
 		}
 	}
 
@@ -217,13 +238,34 @@ func (s *Server) adminBackupRestore(w http.ResponseWriter, r *http.Request) {
 
 	replace := r.FormValue("mode") == "replace"
 	seen := map[string]bool{}
-	var written, skipped int
+	var written, skipped, drafted int
 	for _, f := range zr.File {
 		if f.FileInfo().IsDir() {
 			continue
 		}
 		if backupOwnFile(f.Name) {
 			continue // our manifest and key copies: expected, not "skipped"
+		}
+		// a draft comes back as a draft: restoring must never publish
+		// something its author had not
+		if dp, ok := backupDraftPath(f.Name); ok {
+			rc, err := f.Open()
+			if err != nil {
+				skipped++
+				continue
+			}
+			body, err := io.ReadAll(io.LimitReader(rc, s.Cfg.MaxUploadBytes))
+			rc.Close()
+			if err != nil {
+				skipped++
+				continue
+			}
+			if _, err := s.Store.SaveDraft(dp, body, "", "restore"); err != nil {
+				skipped++
+			} else {
+				drafted++
+			}
+			continue
 		}
 		p, ok := backupEntryPath(f.Name)
 		if !ok {
@@ -268,6 +310,9 @@ func (s *Server) adminBackupRestore(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	msg := fmt.Sprintf("restored %d pages", written)
+	if drafted > 0 {
+		msg += fmt.Sprintf(" and %d drafts", drafted)
+	}
 	if deleted > 0 {
 		msg += fmt.Sprintf(", deleted %d not in the backup", deleted)
 	}
@@ -287,6 +332,28 @@ func backupOwnFile(name string) bool {
 		}
 	}
 	return name == backupManifest || strings.HasPrefix(name, backupKeysDir)
+}
+
+// backupDraftPath maps a drafts/ entry to a store path, with the same
+// refusal to climb out that content entries get.
+func backupDraftPath(name string) (string, bool) {
+	name = filepath.ToSlash(name)
+	if i := strings.Index(name, "/"+backupDraftDir); i > 0 && !strings.Contains(name[:i], "/") {
+		name = name[i+1:] // one wrapping folder
+	}
+	if !strings.HasPrefix(name, backupDraftDir) {
+		return "", false
+	}
+	rest := strings.TrimPrefix(name, backupDraftDir)
+	if rest == "" || strings.HasSuffix(rest, "/") {
+		return "", false
+	}
+	for _, seg := range strings.Split(rest, "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return "", false
+		}
+	}
+	return store.CleanPath("/" + path.Clean(rest))
 }
 
 // backupEntryPath maps a zip entry to a store path, and reports false for

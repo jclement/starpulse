@@ -60,6 +60,11 @@ func (s *Server) adminManual(w http.ResponseWriter, r *http.Request) {
 	b.WriteString(`<h2>Connecting an AI client</h2>
 <p><code>/mcp</code> speaks MCP over HTTP. A client authorizing through OAuth must use PKCE, and is only redirected back to a loopback address, this site, or a host named in <code>oauth_redirect_hosts</code> — that host receives a credential with full admin rights, so listing one is a deliberate act. Claude Desktop can skip the flow: client id <code>mcp</code>, client secret = the admin password.</p>
 
+<h2>Drafts</h2>
+<p>The editor has two verbs. <strong>Save draft</strong> keeps the work to yourself: the site carries on showing the published version, and a page that has never been published simply is not there — 404 on every door, absent from listings, feeds and search. <strong>Publish</strong> is what the world sees. Ctrl/⌘-S saves a draft; it never publishes.</p>
+<p>Opening a page that has a draft continues the draft rather than starting from what is live, so there is no way to lose it by accident. Drafts keep their own history while you work, and publishing records <em>one</em> entry in the page's history however many times you saved along the way. <strong>Discard</strong> throws the draft away; if the page was never published, that removes it entirely.</p>
+<p>Only this editor writes drafts. Titan, the API, MCP and the terminal editors publish directly — there is no way to express "unpublished" over those, so they say what they mean. Backups carry drafts under <code>drafts/</code>, and restoring puts them back as drafts.</p>
+
 <h2>Backups</h2>
 <p><a href="/admin/backup">Backup</a> downloads a zip of plain files — <code>content/about.gmi</code> is the page at <code>/about.gmi</code>, byte for byte — named for this site and the moment it was taken. Version history and view counts stay behind: a backup is the content.</p>
 <p>Restoring the zip <strong>merges</strong> by default (adds and overwrites what it contains, leaves the rest); <strong>replace</strong> also deletes pages the backup does not contain. Overwritten pages keep their history, so a restore is undoable page by page. Optionally the zip can carry your tor hidden-service key, TLS certificates and ssh host key under <code>keys/</code> — restoring never touches those, so keep that copy somewhere safe.</p>

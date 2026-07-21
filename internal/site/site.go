@@ -286,15 +286,53 @@ func (s *Site) Preview(storePath, src string) string {
 	pg, _ := s.Store.GetPage(storePath) // nil for a page that does not exist yet
 	ctx := expandCtx{urlPath: urlPath, page: pg}
 
+	// The preview is the admin looking at their own work, so it is the one
+	// assembly that reads drafts: a drafted .header is invisible to the site
+	// until published, but you have to be able to see what you are writing.
 	var parts []string
-	if h := s.wrapper(storePath, ".header", fm.Header, fm.NoHeader); h != "" {
+	if h := s.draftWrapper(storePath, ".header", fm.Header, fm.NoHeader); h != "" {
 		parts = append(parts, s.expand(h, path.Dir(storePath), ctx, 0))
 	}
 	parts = append(parts, s.expand(body, baseDir, ctx, 0))
-	if f := s.wrapper(storePath, ".footer", fm.Footer, fm.NoFooter); f != "" {
+	if f := s.draftWrapper(storePath, ".footer", fm.Footer, fm.NoFooter); f != "" {
 		parts = append(parts, s.expand(f, path.Dir(storePath), ctx, 0))
 	}
 	return joinChunks(parts)
+}
+
+// draftWrapper is wrapper() with unpublished versions preferred. Only the
+// preview uses it; every public path goes through wrapper(), which cannot
+// see a draft because it reads pages.
+func (s *Site) draftWrapper(pagePath, name, override string, off bool) string {
+	if off {
+		return ""
+	}
+	if override != "" {
+		if d, err := s.Store.GetDraft(override); err == nil {
+			body, _ := stripFrontMatter(string(d.Content))
+			return body
+		}
+		return s.wrapper(pagePath, name, override, off)
+	}
+	dir := path.Dir(pagePath)
+	for {
+		p := dir + "/" + name
+		if dir == "/" {
+			p = "/" + name
+		}
+		if d, err := s.Store.GetDraft(p); err == nil {
+			body, _ := stripFrontMatter(string(d.Content))
+			return body
+		}
+		if pg, err := s.Store.GetPage(p); err == nil {
+			body, _ := stripFrontMatter(string(pg.Content))
+			return body
+		}
+		if dir == "/" || dir == "." {
+			return ""
+		}
+		dir = path.Dir(dir)
+	}
 }
 
 func joinChunks(parts []string) string {

@@ -418,3 +418,35 @@ func TestEmptyFingerprintAllowlistAuthorizesNobody(t *testing.T) {
 		t.Errorf("normalised = %q", got)
 	}
 }
+
+// Drafts must be invisible over gemini too: it is a separate server reading
+// the same store, and the guarantee is supposed to hold without it knowing
+// that drafts exist at all.
+func TestDraftsAreInvisibleOverGemini(t *testing.T) {
+	ts := startServer(t)
+	_, _ = ts.st.SavePage("/live.gmi", []byte("# Live\n\nPUBLISHED-BODY"), "", "t")
+	_, _ = ts.st.SaveDraft("/live.gmi", []byte("# Live\n\nREWRITTEN-BODY"), "", "web")
+	_, _ = ts.st.SaveDraft("/secret.gmi", []byte("# Secret\n\nSECRET-BODY"), "", "web")
+
+	resp := ts.request(t, "gemini://localhost/live", nil, nil)
+	if !strings.HasPrefix(resp, "20 ") || !strings.Contains(resp, "PUBLISHED-BODY") {
+		t.Errorf("published page over gemini:\n%s", resp)
+	}
+	if strings.Contains(resp, "REWRITTEN-BODY") {
+		t.Error("gemini served the draft instead of the published page")
+	}
+	if resp := ts.request(t, "gemini://localhost/secret", nil, nil); !strings.HasPrefix(resp, "51") {
+		t.Errorf("a draft-only page answered %q, want 51", firstLine(resp))
+	}
+	// nor in a directory listing
+	if resp := ts.request(t, "gemini://localhost/", nil, nil); strings.Contains(resp, "secret") {
+		t.Errorf("a draft appeared in the gemini listing:\n%s", resp)
+	}
+}
+
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i > 0 {
+		return s[:i]
+	}
+	return s
+}
