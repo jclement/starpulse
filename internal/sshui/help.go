@@ -26,6 +26,12 @@ func helpDoc(admin bool) string {
 * c — create a new page
 * n — post a note into the notes folder (shown by {{now}} or {{latest}})
 
+## Links
+
+Internal links open here. External ones are handed to your terminal as
+hyperlinks — ctrl or ⌘-click to open them on your own machine. They are never
+fetched by the server.
+
 ## Mouse
 
 The wheel scrolls, a click follows a link, and a click on a word in the

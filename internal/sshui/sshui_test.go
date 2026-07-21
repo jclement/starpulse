@@ -728,3 +728,109 @@ func TestMouseOverARealSession(t *testing.T) {
 	ts.send(fmt.Sprintf("\x1b[<0;%d;%dm", col, row))
 	ts.expect("About Me")
 }
+
+// /search is not a stored page — the web and gemini doors build it on the
+// fly — so following the site's own "search the capsule" link used to land
+// on "not found" in the terminal doors.
+func TestSearchLinkWorksInTheTUI(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	_, _ = st.SavePage("/index.gmi", []byte("# Home\n\n=> /search Search the capsule"), "", "t")
+	_, _ = st.SavePage("/beans.gmi", []byte("# Beans\n\nroasting notes"), "", "t")
+
+	newM := func() *model {
+		m := newProtoModel(site.New(st), st, "h", false, 80, 24, lipgloss.DefaultRenderer(), "ssh")
+		m.navigate("/", false)
+		return m
+	}
+
+	// following the link opens the search prompt rather than 404ing
+	m := newM()
+	m.navigate("/search", true)
+	if m.mode != modeInput || m.inputKind != inputSearch {
+		t.Fatalf("mode = %v, inputKind = %v — the search link did not open the prompt", m.mode, m.inputKind)
+	}
+	if strings.Contains(m.status, "not found") {
+		t.Errorf("status says %q", m.status)
+	}
+
+	// a link carrying the query runs it, as the other doors do
+	m = newM()
+	m.navigate("/search?q=roasting", true)
+	body := ansi.Strip(m.View())
+	if !strings.Contains(body, "Search: roasting") || !strings.Contains(body, "Beans") {
+		t.Errorf("/search?q= did not run the search:\n%s", body)
+	}
+
+	// a gemini-style link carries the term as the whole query
+	m = newM()
+	m.navigate("/search?roasting", true)
+	if body := ansi.Strip(m.View()); !strings.Contains(body, "Beans") {
+		t.Errorf("gemini-style /search?term did not run the search:\n%s", body)
+	}
+
+	// and typing a query at the prompt still works
+	m = newM()
+	m.navigate("/search", true)
+	for _, r := range "roasting" {
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if body := ansi.Strip(m.View()); !strings.Contains(body, "Beans") {
+		t.Errorf("prompt search found nothing:\n%s", body)
+	}
+}
+
+// External links are handed to the reader's terminal as OSC 8 hyperlinks
+// rather than fetched here: fetching would make the capsule an open proxy
+// and let any guest aim the server at addresses only the server can reach.
+func TestExternalLinksAreHyperlinksNotFetches(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	_, _ = st.SavePage("/index.gmi", []byte(
+		"# Home\n\n=> https://example.org/x An external page\n=> /about Internal page"), "", "t")
+	_, _ = st.SavePage("/about.gmi", []byte("# About Me"), "", "t")
+
+	m := newProtoModel(site.New(st), st, "h", false, 80, 24, lipgloss.DefaultRenderer(), "ssh")
+	m.navigate("/", false)
+	frame := m.View()
+
+	// the external one carries the OSC 8 escape with its URL
+	if !strings.Contains(frame, "\x1b]8;;https://example.org/x\x1b\\") {
+		t.Errorf("no hyperlink escape for the external link:\n%q", frame)
+	}
+	// the internal one does not: it is followed in-app
+	if strings.Contains(frame, "\x1b]8;;/about") {
+		t.Error("internal link was marked as an external hyperlink")
+	}
+	// the escape must not change how wide the line is, or wrapping and the
+	// bottom bar would drift
+	for _, line := range strings.Split(frame, "\n") {
+		if w := ansi.StringWidth(line); w > 80 {
+			t.Errorf("line is %d columns after hyperlinking: %q", w, ansi.Strip(line))
+		}
+	}
+
+	// opening an external link changes nothing on the server: no navigation,
+	// no fetch — just the URL, said out loud
+	before := m.url
+	m.sel = 0
+	m.openLink(0)
+	if m.url != before {
+		t.Errorf("an external link navigated to %q", m.url)
+	}
+	if !strings.Contains(m.status, "https://example.org/x") {
+		t.Errorf("status does not show the URL: %q", m.status)
+	}
+	// and the internal one still works
+	m.openLink(1)
+	if m.url != "/about" {
+		t.Errorf("internal link went to %q, want /about", m.url)
+	}
+}

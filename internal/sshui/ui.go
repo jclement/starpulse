@@ -2,6 +2,7 @@ package sshui
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -115,6 +116,18 @@ func (m *model) Init() tea.Cmd { return nil }
 // ---- navigation ---------------------------------------------------------
 
 func (m *model) navigate(url string, pushHistory bool) {
+	// /search is not a page anywhere — the web and gemini doors each build it
+	// on the fly — so following the site's own "search the capsule" link fell
+	// through to "not found". Here it opens the same prompt "/" does, and a
+	// ?q= runs the search straight away, the way the other doors do.
+	if path, query, _ := strings.Cut(url, "?"); path == "/search" || path == "/search/" {
+		if q := searchQuery(query); q != "" {
+			m.runSearch(q)
+			return
+		}
+		m.prompt(inputSearch, "search", "")
+		return
+	}
 	res := m.site.Resolve(url, m.proto)
 	switch res.Type {
 	case site.RedirectResult:
@@ -141,6 +154,28 @@ func (m *model) navigate(url string, pushHistory bool) {
 	default:
 		m.setStatus("not found: "+url, true)
 	}
+}
+
+// searchQuery reads the term out of a /search link. The web writes ?q=term
+// and gemini writes the term as the whole query, and the TUI follows links
+// written for either door, so it accepts both.
+func searchQuery(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	if v, err := url.ParseQuery(raw); err == nil {
+		if q := v.Get("q"); q != "" {
+			return q
+		}
+	}
+	if strings.Contains(raw, "=") {
+		return ""
+	}
+	q, err := url.QueryUnescape(raw)
+	if err != nil {
+		return ""
+	}
+	return q
 }
 
 func (m *model) showDoc(url, title, gmi string) {
@@ -189,7 +224,7 @@ func (m *model) openLink(i int) {
 	}
 	u := m.links[i].URL
 	if strings.Contains(u, "://") || strings.HasPrefix(u, "mailto:") {
-		m.setStatus("external link: "+u, false)
+		m.setStatus("external: "+u+"  (ctrl/⌘-click to open in your terminal)", false)
 		return
 	}
 	u = strings.TrimSuffix(u, ".gmi")

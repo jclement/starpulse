@@ -62,6 +62,19 @@ type pageLink struct {
 	Lines int // how many lines it occupies, so a click can land on any of them
 }
 
+// hyperlink marks text as an OSC 8 hyperlink, which terminals that support
+// it will open — on the reader's own machine.
+//
+// This is how external links work here. The alternative, fetching them
+// server-side and rendering the result, would turn the capsule into an open
+// proxy and hand any guest a way to make the server request addresses only
+// the server can reach. Handing the URL to the reader's terminal costs
+// nothing and risks nothing; terminals that do not understand OSC 8 ignore
+// it and show the label as before.
+func hyperlink(url, label string) string {
+	return "\x1b]8;;" + url + "\x1b\\" + label + "\x1b]8;;\x1b\\"
+}
+
 // renderDoc converts gemtext to styled terminal lines and collects links.
 // selected is the index of the highlighted link (-1 for none).
 func renderDoc(st *styles, src string, width int, selected int) (lines []string, links []pageLink) {
@@ -101,6 +114,7 @@ func renderDoc(st *styles, src string, width int, selected int) (lines []string,
 			}
 		case gemtext.Link:
 			idx := len(links)
+			external := strings.Contains(l.URL, "://") || strings.HasPrefix(l.URL, "mailto:")
 			style := st.link
 			if strings.Contains(l.URL, "://") {
 				style = st.linkExt
@@ -114,6 +128,9 @@ func renderDoc(st *styles, src string, width int, selected int) (lines []string,
 			}
 			links = append(links, pageLink{URL: l.URL, Label: l.Text, Line: len(lines)})
 			for i, ln := range wrap(style, l.Text) {
+				if external {
+					ln = hyperlink(l.URL, ln)
+				}
 				if i == 0 {
 					lines = append(lines, st.bullet.Render("⇒ ")+num+ln)
 				} else {
