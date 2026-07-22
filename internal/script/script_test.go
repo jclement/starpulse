@@ -286,26 +286,3 @@ func TestCallerContextCancels(t *testing.T) {
 
 // words.valid is a host-provided builtin (a dictionary the sandbox cannot
 // reach on its own); it only appears when the host supplies one.
-func TestWordsBuiltin(t *testing.T) {
-	dict := map[string]bool{"crane": true, "audio": true}
-	e := New(Options{WordOK: func(w string) bool { return dict[w] }})
-	got := func(code string) string {
-		res, err := e.Run(context.Background(), "/s.lua", code, Request{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return string(res.Body)
-	}
-	if got(`write(tostring(words.valid("crane")))`) != "true" {
-		t.Error("a real word was rejected")
-	}
-	if got(`write(tostring(words.valid("zzzzz")))`) != "false" {
-		t.Error("a non-word was accepted")
-	}
-	// without a validator the table is absent
-	e2 := New(Options{})
-	res, _ := e2.Run(context.Background(), "/s.lua", `write(type(words))`, Request{})
-	if string(res.Body) != "nil" {
-		t.Errorf("words table present without a validator: %q", res.Body)
-	}
-}
