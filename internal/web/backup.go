@@ -2,6 +2,7 @@ package web
 
 import (
 	"archive/zip"
+	"encoding/json"
 	"fmt"
 	"html"
 	"io"
@@ -33,6 +34,7 @@ const (
 	backupDraftDir   = "drafts/"
 	backupKeysDir    = "keys/"
 	backupManifest   = "BACKUP.txt"
+	backupDataFile   = "script-data.json"
 )
 
 // adminBackup is the screen: download on top, restore below it.
@@ -169,6 +171,14 @@ func (s *Server) adminBackupZip(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// the data executable pages keep — guestbooks, counters, saved state —
+	// travels as one JSON file, so restoring a backup brings it back
+	if rows, err := s.Store.AllScriptKV(); err == nil && len(rows) > 0 {
+		if blob, err := json.Marshal(rows); err == nil {
+			fmt.Fprintf(&manifest, "script data: %d value(s)\n", len(rows))
+			_ = add(backupDataFile, now, blob)
+		}
+	}
 	_ = add(backupManifest, now, []byte(manifest.String()))
 }
 
@@ -238,13 +248,33 @@ func (s *Server) adminBackupRestore(w http.ResponseWriter, r *http.Request) {
 
 	replace := r.FormValue("mode") == "replace"
 	seen := map[string]bool{}
-	var written, skipped, drafted int
+var written, skipped, drafted, dataRestored int
 	for _, f := range zr.File {
 		if f.FileInfo().IsDir() {
 			continue
 		}
 		if backupOwnFile(f.Name) {
 			continue // our manifest and key copies: expected, not "skipped"
+		}
+		if base := path.Base(f.Name); base == backupDataFile {
+			rc, err := f.Open()
+			if err != nil {
+				skipped++
+				continue
+			}
+			blob, err := io.ReadAll(io.LimitReader(rc, s.Cfg.MaxUploadBytes))
+			rc.Close()
+			var rows []store.ScriptKVRow
+			if err != nil || json.Unmarshal(blob, &rows) != nil {
+				skipped++
+				continue
+			}
+			for _, r := range rows {
+				if err := s.Store.ScriptKVSet(r.Script, r.Key, r.Value); err == nil {
+					dataRestored++
+				}
+			}
+			continue
 		}
 		// a draft comes back as a draft: restoring must never publish
 		// something its author had not
@@ -312,6 +342,9 @@ func (s *Server) adminBackupRestore(w http.ResponseWriter, r *http.Request) {
 	msg := fmt.Sprintf("restored %d pages", written)
 	if drafted > 0 {
 		msg += fmt.Sprintf(" and %d drafts", drafted)
+	}
+	if dataRestored > 0 {
+		msg += fmt.Sprintf(", %d script values", dataRestored)
 	}
 	if deleted > 0 {
 		msg += fmt.Sprintf(", deleted %d not in the backup", deleted)

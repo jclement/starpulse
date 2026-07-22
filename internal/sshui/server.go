@@ -159,7 +159,15 @@ func (s *Server) teaHandler(sess ssh.Session) (tea.Model, []tea.ProgramOption) {
 	renderer := lipgloss.NewRenderer(sess, termenv.WithColorCache(true))
 	renderer.SetColorProfile(profileFor(pty.Term))
 	renderer.SetHasDarkBackground(true)
-	return newModel(s.Site, s.Store, s.Cfg.Hostname, admin, w, h, renderer), []tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion()}
+	m := newModel(s.Site, s.Store, s.Cfg.Hostname, admin, w, h, renderer)
+	// a public key is a strong, stable identity; without one the session id
+	// from newModel stands (weak, per-connection)
+	if pk := sess.PublicKey(); pk != nil {
+		m.identity = "ssh:" + gossh.FingerprintSHA256(pk)
+		m.identityKind = "sshkey"
+		m.identityVerified = true
+	}
+	return m, []tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion()}
 }
 
 func profileFor(term string) termenv.Profile {

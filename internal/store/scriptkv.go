@@ -64,3 +64,29 @@ func dropScriptKV(tx *sql.Tx, script string) error {
 	_, err := tx.Exec(`DELETE FROM script_kv WHERE script = ?`, script)
 	return err
 }
+
+// ScriptKVRow is one stored value, for backup and restore.
+type ScriptKVRow struct {
+	Script string `json:"script"`
+	Key    string `json:"key"`
+	Value  string `json:"value"`
+}
+
+// AllScriptKV returns every stored value, so a backup can carry the data
+// that executable pages keep.
+func (s *Store) AllScriptKV() ([]ScriptKVRow, error) {
+	rows, err := s.db.Query(`SELECT script, key, value FROM script_kv ORDER BY script, key`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ScriptKVRow
+	for rows.Next() {
+		var r ScriptKVRow
+		if err := rows.Scan(&r.Script, &r.Key, &r.Value); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}

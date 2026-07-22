@@ -50,14 +50,16 @@ type model struct {
 	// live is set once the session does something. Until then its views are
 	// held in pendingHit rather than counted — a connection that types
 	// nothing is a scanner, and there are hundreds a day on port 23.
-	live       bool
-	pendingHit string
-	nowFolder  string
-	identity   string // per-session id handed to executable pages ("" = none)
-	scriptPath string // the .lua page currently showing, for input resubmits
-	scriptGmi  bool
-	renderer   *lipgloss.Renderer
-	st         *styles
+	live             bool
+	pendingHit       string
+	nowFolder        string
+	identity         string // id handed to executable pages ("" = none)
+	identityKind     string // "sshkey" | "session" | ""
+	identityVerified bool   // true for a real key, false for a session id
+	scriptPath       string // the .lua page currently showing, for input resubmits
+	scriptGmi        bool
+	renderer         *lipgloss.Renderer
+	st               *styles
 
 	width, height int
 	mode          mode
@@ -107,23 +109,24 @@ func newProtoModel(sy *site.Site, st *store.Store, hostname string, admin bool, 
 	if renderer == nil {
 		renderer = lipgloss.DefaultRenderer()
 	}
-	identity := ""
+	identity, kind := "", ""
 	if strings.Contains(proto, "ssh") {
-		identity = newSessionID() // stable within the connection
+		identity, kind = newSessionID(), "session" // a key overrides this later
 	}
 	m := &model{
-		site:      sy,
-		store:     st,
-		hostname:  hostname,
-		admin:     admin,
-		proto:     proto,
-		identity:  identity,
-		nowFolder: "/now/",
-		renderer:  renderer,
-		st:        makeStyles(renderer),
-		width:     w,
-		height:    h,
-		vp:        viewport.New(w, max(1, h-3)),
+		site:         sy,
+		store:        st,
+		hostname:     hostname,
+		admin:        admin,
+		proto:        proto,
+		identity:     identity,
+		identityKind: kind,
+		nowFolder:    "/now/",
+		renderer:     renderer,
+		st:           makeStyles(renderer),
+		width:        w,
+		height:       h,
+		vp:           viewport.New(w, max(1, h-3)),
 	}
 	m.navigate("/", false)
 	return m
@@ -243,7 +246,7 @@ func (m *model) runScript(storePath, url string, gmi bool, input string, hasInpu
 		Input: input, HasInput: hasInput,
 	}
 	if m.identity != "" {
-		req.Identity, req.IdentityKind, req.Verified = m.identity, "session", false
+		req.Identity, req.IdentityKind, req.Verified = m.identity, m.identityKind, m.identityVerified
 	}
 	res, err := m.site.RunScript(context.Background(), storePath, url, req)
 	if err != nil {

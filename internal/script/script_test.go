@@ -325,6 +325,25 @@ func TestSpPrelude(t *testing.T) {
 		t.Errorf("telnet hint missing: %q", res.Body)
 	}
 
+	// require_strong: a verified identity passes; an unverified one is refused
+	res, _ = run(`write(sp.require_strong())`, Request{Identity: "fp", Verified: true})
+	if string(res.Body) != "fp" {
+		t.Errorf("require_strong with a verified id: %q", res.Body)
+	}
+	res, err = run(`sp.require_strong() write("PASTSTOP")`, Request{Identity: "cookie", Verified: false, Proto: "https"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(res.Body), "PASTSTOP") {
+		t.Errorf("require_strong let an unverified id through: %q", res.Body)
+	}
+	if !strings.Contains(string(res.Body), "not verified") {
+		t.Errorf("require_strong message missing: %q", res.Body)
+	}
+	if got, _ := run(`write(tostring(sp.verified()))`, Request{Verified: true}); string(got.Body) != "true" {
+		t.Errorf("sp.verified: %q", got.Body)
+	}
+
 	// kv helpers
 	run(`sp.set("name", "jeff")`, Request{})
 	res, _ = run(`write(sp.get("name", "?") .. " " .. sp.get("missing", "default"))`, Request{})

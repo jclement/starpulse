@@ -21,6 +21,14 @@ function sp.identity()
   return request.identity
 end
 
+-- verified() reports whether the identity is cryptographically bound — a
+-- gemini client certificate or an ssh key — rather than a bearer cookie a
+-- browser hands over. A page that matters should not trust a cookie the way
+-- it trusts a key.
+function sp.verified()
+  return request.identity_verified
+end
+
 -- require_identity() is the hard form: return the id, or write a standard
 -- "who are you" message appropriate to the door and stop. This is the
 -- boilerplate every gated page would otherwise carry.
@@ -36,6 +44,25 @@ function sp.require_identity(message)
     write("Telnet has no identity — visit over the web or gemini instead.\n")
   else
     write("Your session was not recognised — allow cookies and reload.\n")
+  end
+  sp.stop()
+end
+
+-- require_strong() is require_identity that also insists the identity be
+-- verified: a cookie or a bare session will not do, only a key or a
+-- certificate.
+function sp.require_strong(message)
+  if request.identity ~= "" and request.identity_verified then
+    return request.identity
+  end
+  write(message or "This page needs a verified identity, not just a browser session.")
+  write("\n\n")
+  if request.proto == "gemini" then
+    write("Present a client certificate for this capsule, then reload.\n")
+  elseif request.proto == "ssh" or request.proto == "telnet" then
+    write("Connect over SSH with a public key.\n")
+  else
+    write("A browser session is not verified — use gemini with a client certificate, or ssh with a key.\n")
   end
   sp.stop()
 end
