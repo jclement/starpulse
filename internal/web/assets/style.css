@@ -687,3 +687,13 @@ div.fset a.absent:hover { color: var(--accent); }
   table.browse td { padding: 0.4em 0.35em 0.4em 0; }
   table.browse td.num { display: none; }
 }
+
+/* lua tokens in the editor's highlight layer */
+.l-kw { color: #9a5bb8; }
+.l-num { color: #2c8a6d; }
+.l-str { color: #b3612f; }
+@media (prefers-color-scheme: dark) {
+  .l-kw { color: #c99ee0; }
+  .l-num { color: #6fcaa5; }
+  .l-str { color: #e0a06a; }
+}

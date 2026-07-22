@@ -408,8 +408,30 @@
       .replace(/^([\w-]+)(\s*:)/gm, '<span class="c-var">$1</span>$2');
   }
 
+  // Lua for executable pages (name ends .lua). A light touch, in the same
+  // spirit as the others: comments, strings, numbers, and the keywords —
+  // enough to read the shape of a script, not a full grammar.
+  var luaKw = /\b(and|break|do|else|elseif|end|false|for|function|if|in|local|nil|not|or|repeat|return|then|true|until|while)\b/g;
+  function lua(src) {
+    var out = "", i = 0;
+    // walk the source token by token so a keyword inside a string or comment
+    // is not coloured as a keyword
+    var re = /--\[\[[\s\S]*?\]\]|--[^\n]*|\[\[[\s\S]*?\]\]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\b\d[\w.]*\b/g, m;
+    while ((m = re.exec(src))) {
+      out += esc(src.slice(i, m.index)).replace(luaKw, '<span class="l-kw">$1</span>');
+      var tok = m[0], cls = "l-str";
+      if (tok.indexOf("--") === 0) cls = "c-comment";
+      else if (/^\d/.test(tok)) cls = "l-num";
+      out += '<span class="' + cls + '">' + esc(tok) + "</span>";
+      i = m.index + tok.length;
+    }
+    out += esc(src.slice(i)).replace(luaKw, '<span class="l-kw">$1</span>');
+    return out;
+  }
+
   function pick() {
     var p = (path && path.value) || "";
+    if (/\.lua$/.test(p)) return lua;
     if (/\.feed$/.test(p)) return keyvals;
     if (/\.(css)$/.test(p)) return css;
     if (/\.(gmi|gemini)$/.test(p) || p === "" || !/\.[a-z0-9]+$/i.test(p)) return gemtext;
