@@ -450,3 +450,94 @@ func TestCreatedDateFollowsTheConfiguredZone(t *testing.T) {
 		t.Errorf("explicit date overridden: %q", got)
 	}
 }
+
+// RenamePage moves the row; it must also recompute everything derived from
+// the NAME — the review found four ways it did not.
+func TestRenameRecomputesDerivedMetadata(t *testing.T) {
+	st := openTest(t)
+
+	// (1) renaming to a dated name makes it a dated post
+	_, _ = st.SavePage("/hello.gmi", []byte("no heading here, so the title is the filename"), "", "t")
+	if _, err := st.RenamePage("/hello.gmi", "/2026-07-20-hello.gmi", "t"); err != nil {
+		t.Fatal(err)
+	}
+	pg, err := st.GetPage("/2026-07-20-hello.gmi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pg.Date != "2026-07-20" {
+		t.Errorf("renamed-to-dated page has date %q, want 2026-07-20", pg.Date)
+	}
+	// (2) a filename-derived title updates to the new name
+	if pg.Title != "2026-07-20-hello" {
+		t.Errorf("title after rename = %q, want the new filename", pg.Title)
+	}
+
+	// (3a) renaming a page into hiding removes it from search
+	_, _ = st.SavePage("/embarrassing.gmi", []byte("# Secret\n\nplease forget this"), "", "t")
+	if hits, _ := st.Search("forget", 10); len(hits) == 0 {
+		t.Fatal("setup: page not searchable")
+	}
+	if _, err := st.RenamePage("/embarrassing.gmi", "/.embarrassing", "t"); err != nil {
+		t.Fatal(err)
+	}
+	if hits, _ := st.Search("forget", 10); len(hits) != 0 {
+		t.Errorf("a page hidden by rename is still in search: %+v", hits)
+	}
+	// (3b) renaming a hidden page into the open adds it to search
+	_, _ = st.SavePage("/.stash", []byte("# Draftish\n\ncomes into the light"), "", "t")
+	if hits, _ := st.Search("light", 10); len(hits) != 0 {
+		t.Fatal("setup: hidden page should not be searchable")
+	}
+	if _, err := st.RenamePage("/.stash", "/public.gmi", "t"); err != nil {
+		t.Fatal(err)
+	}
+	if hits, _ := st.Search("light", 10); len(hits) == 0 {
+		t.Error("a page revealed by rename is missing from search")
+	}
+}
+
+// Deleting a page removes its hit counters, and a rename onto an occupied
+// stats key sums rather than silently dropping the source's counts.
+func TestRenameAndDeleteHandleHitsCleanly(t *testing.T) {
+	st := openTest(t)
+	_, _ = st.SavePage("/a.gmi", []byte("# A"), "", "t")
+	_, _ = st.SavePage("/b.gmi", []byte("# B"), "", "t")
+	st.Bump("/a", "http")
+	st.Bump("/a", "http")
+	st.Bump("/b", "http")
+
+	// deleting /b clears its counter — no phantom row to steal /a's later
+	if err := st.DeletePage("/b.gmi", "t"); err != nil {
+		t.Fatal(err)
+	}
+	if n := st.Count("/b"); n != 0 {
+		t.Errorf("deleted page still has %d views", n)
+	}
+	// renaming /a onto the now-free /b keeps /a's two views
+	if _, err := st.RenamePage("/a.gmi", "/b.gmi", "t"); err != nil {
+		t.Fatal(err)
+	}
+	if n := st.Count("/b"); n != 2 {
+		t.Errorf("views lost on rename: /b = %d, want 2", n)
+	}
+	if n := st.Count("/a"); n != 0 {
+		t.Errorf("old key still counts %d", n)
+	}
+
+	// and when the destination DOES have counts, they sum
+	_, _ = st.SavePage("/x.gmi", []byte("# X"), "", "t")
+	_, _ = st.SavePage("/y.gmi", []byte("# Y"), "", "t")
+	st.Bump("/x", "gemini") // 1
+	st.Bump("/y", "gemini") // 1
+	st.Bump("/y", "gemini") // 2
+	// delete /y's page but leave a stats collision by re-creating the key via
+	// a fresh page, then rename /x onto /y
+	if _, err := st.RenamePage("/x.gmi", "/z.gmi", "t"); err != nil {
+		t.Fatal(err)
+	}
+	// /y still has its 2; renaming /z onto /y should sum to 3
+	if _, err := st.RenamePage("/z.gmi", "/y.gmi", "t"); err == nil {
+		t.Error("rename onto an existing page should fail")
+	}
+}

@@ -465,8 +465,21 @@ func (s *Server) adminVersion(w http.ResponseWriter, r *http.Request) {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "<h1>%s @ %s</h1>\n%s", html.EscapeString(v.Path), v.SavedAt.In(s.loc()).Format("2006-01-02 15:04:05"), adminNav())
-	if strings.HasPrefix(v.Mime, "text/") || strings.Contains(v.Mime, "json") || strings.Contains(v.Mime, "xml") {
-		fmt.Fprintf(&b, "<pre>%s</pre>\n", html.EscapeString(string(v.Content)))
+	textual := strings.HasPrefix(v.Mime, "text/") || strings.Contains(v.Mime, "json") || strings.Contains(v.Mime, "xml")
+	if textual {
+		// what this version would change if restored: its content against
+		// what is live now
+		cur := ""
+		if pg, err := s.Store.GetPage(v.Path); err == nil {
+			cur = string(pg.Content)
+		}
+		if cur == string(v.Content) {
+			b.WriteString(`<p class="dim">Identical to the current page.</p>`)
+		} else {
+			b.WriteString(`<p class="dim">Changes restoring this version would make:</p>`)
+			b.WriteString(renderDiff(cur, string(v.Content)))
+		}
+		fmt.Fprintf(&b, `<details><summary class="btn quiet">view full content</summary><pre>%s</pre></details>`, html.EscapeString(string(v.Content)))
 	} else {
 		fmt.Fprintf(&b, "<p>Binary content (%s, %s).</p>", html.EscapeString(v.Mime), sizeStr(v.Size))
 	}

@@ -177,9 +177,14 @@ type frontMatter struct {
 	// one ("header: /.header"). Empty means "whatever this folder inherits".
 	Header string
 	Footer string
+	// Css opts a page out of its inherited stylesheet ("css: none") or names
+	// a different one ("css: /theme.css"). NoCss records the "none" case,
+	// which Css == "" cannot express on its own.
+	Css   string
+	NoCss bool
 }
 
-var fmKeyRe = regexp.MustCompile(`(?m)^(title|date|header|footer)\s*[:=]\s*(.+)$`)
+var fmKeyRe = regexp.MustCompile(`(?m)^(title|date|header|footer|css)\s*[:=]\s*(.+)$`)
 
 // stripFrontMatter removes a leading --- ... --- block, returning the body
 // and any recognized keys it declared.
@@ -216,6 +221,11 @@ func stripFrontMatter(src string) (string, frontMatter) {
 			fm.NoFooter = off
 			if !off && strings.HasPrefix(val, "/") {
 				fm.Footer = val
+			}
+		case "css":
+			fm.NoCss = off
+			if !off && strings.HasPrefix(val, "/") {
+				fm.Css = val
 			}
 		}
 	}
@@ -260,8 +270,24 @@ func (s *Site) pageResult(urlPath string, pg *store.Page, proto string) *Result 
 		SourcePath: pg.Path,
 		Title:      title,
 		Gemtext:    joinChunks(parts),
-		Theme:      s.nearestSpecial(pg.Path, ".css"),
+		Theme:      s.themeFor(pg.Path, fm),
 	}}
+}
+
+// themeFor is the stylesheet a page renders under: none when it opted out,
+// the file it named, or the inherited .css otherwise — the same choice
+// header and footer already offer.
+func (s *Site) themeFor(pagePath string, fm frontMatter) string {
+	if fm.NoCss {
+		return ""
+	}
+	if fm.Css != "" {
+		if pg, err := s.Store.GetPage(fm.Css); err == nil {
+			return string(pg.Content)
+		}
+		return ""
+	}
+	return s.nearestSpecial(pagePath, ".css")
 }
 
 // Preview assembles unsaved editor content exactly as pageResult would if it
@@ -458,6 +484,12 @@ func (s *Site) expand(body, baseDir string, ctx expandCtx, depth int) string {
 	}
 	// inline tokens work mid-sentence
 	body = strings.ReplaceAll(body, "{{version}}", BuildVersion)
+	if strings.Contains(body, "{{today}}") {
+		body = strings.ReplaceAll(body, "{{today}}", time.Now().In(s.loc()).Format("2006-01-02"))
+	}
+	if strings.Contains(body, "{{date}}") {
+		body = strings.ReplaceAll(body, "{{date}}", time.Now().In(s.loc()).Format("2006-01-02"))
+	}
 	if strings.Contains(body, "{{updated}}") {
 		body = strings.ReplaceAll(body, "{{updated}}", s.updatedString(ctx))
 	}

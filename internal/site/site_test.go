@@ -440,3 +440,36 @@ func TestListKeepsChronologyWithinADay(t *testing.T) {
 		t.Errorf("{{list /name}} stopped being a folder listing:\n%s", g)
 	}
 }
+
+// {{today}}/{{date}} render the current date; the {{now}} folder token is a
+// different thing, and this is the token every author reaches for first.
+func TestTodayAndCssFrontMatter(t *testing.T) {
+	sy, st := testSite(t)
+	st.Loc = time.UTC
+	today := time.Now().In(time.UTC).Format("2006-01-02")
+	save(t, st, "/a.gmi", "# A\n\nas of {{today}} / {{date}}")
+	if g := sy.Resolve("/a", "").Page.Gemtext; !strings.Contains(g, "as of "+today+" / "+today) {
+		t.Errorf("{{today}}/{{date}} did not render:\n%s", g)
+	}
+
+	// css front matter, matching header/footer
+	save(t, st, "/.css", ":root{--x:1}")
+	save(t, st, "/theme.css", ".named{}")
+	// inherited by default
+	if th := sy.Resolve("/b", "").Type; th != NotFound { /* /b missing, skip */
+	}
+	save(t, st, "/plain.gmi", "# Plain")
+	if th := sy.Resolve("/plain", "").Page.Theme; !strings.Contains(th, "--x") {
+		t.Errorf("inherited css not applied: %q", th)
+	}
+	// css: none opts out
+	save(t, st, "/bare.gmi", "---\ncss: none\n---\n# Bare")
+	if th := sy.Resolve("/bare", "").Page.Theme; th != "" {
+		t.Errorf("css: none did not opt out: %q", th)
+	}
+	// css: /path names a different file
+	save(t, st, "/themed.gmi", "---\ncss: /theme.css\n---\n# Themed")
+	if th := sy.Resolve("/themed", "").Page.Theme; !strings.Contains(th, ".named") {
+		t.Errorf("css: /path not used: %q", th)
+	}
+}

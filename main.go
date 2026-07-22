@@ -103,7 +103,11 @@ func main() {
 	case "doctor":
 		cfg, err := config.Load(*cfgPath)
 		run(err)
-		run(cli.Doctor(cfg))
+		if len(rest) > 0 && (rest[0] == "--links" || rest[0] == "links") {
+			run(cli.DoctorLinks(cfg))
+		} else {
+			run(cli.Doctor(cfg))
+		}
 	case "hash-password":
 		run(hashPassword())
 	case "version":

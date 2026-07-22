@@ -10,7 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"path"
+
 	"github.com/jclement/starpulse/internal/config"
+	"github.com/jclement/starpulse/internal/gemtext"
+	"github.com/jclement/starpulse/internal/site"
 	"github.com/jclement/starpulse/internal/store"
 )
 
@@ -195,4 +199,64 @@ func tlsExpiry(addr, serverName string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("no certificate presented")
 	}
 	return certs[0].NotAfter, nil
+}
+
+// DoctorLinks walks every gemtext page and reports internal => links whose
+// target does not resolve — the health check that fits a link-per-line
+// format best. External links (with a scheme) are left alone.
+func DoctorLinks(cfg *config.Config) error {
+	st, err := store.Open(filepath.Join(cfg.DataDir, "starpulse.sqlite"))
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	sy := site.New(st)
+
+	metas, err := st.ListAll()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("\n%s%s🔗 starpulse link check%s %s@ %s%s\n\n", cBold, cPink, cReset, cDim, cfg.Hostname, cReset)
+
+	var checked, dead int
+	for _, m := range metas {
+		if m.Binary || store.Hidden(m.Path) || !strings.HasSuffix(m.Path, ".gmi") {
+			continue
+		}
+		pg, err := st.GetPage(m.Path)
+		if err != nil {
+			continue
+		}
+		from := strings.TrimSuffix(m.Path, ".gmi") // the page's served URL
+		for _, line := range gemtext.Parse(string(pg.Content)) {
+			if line.Type != gemtext.Link {
+				continue
+			}
+			u := line.URL
+			if u == "" || strings.Contains(u, "://") || strings.HasPrefix(u, "//") ||
+				strings.HasPrefix(u, "mailto:") || strings.HasPrefix(u, "#") {
+				continue // external or non-navigational
+			}
+			target := u
+			if i := strings.IndexAny(target, "?#"); i >= 0 {
+				target = target[:i]
+			}
+			if !strings.HasPrefix(target, "/") {
+				target = path.Join(path.Dir(from), target) // relative to the page
+			}
+			checked++
+			if sy.Resolve(target, "").Type == site.NotFound {
+				dead++
+				fmt.Printf("  %s✗%s %s%s%s  →  %s\n", cRed, cReset, cDim, from, cReset, u)
+			}
+		}
+	}
+
+	fmt.Println()
+	if dead == 0 {
+		fmt.Printf("%s%d internal links, all resolve%s\n\n", cGreen, checked, cReset)
+		return nil
+	}
+	fmt.Printf("%s%d of %d internal links are dead%s\n\n", cRed, dead, checked, cReset)
+	return fmt.Errorf("%d dead link(s)", dead)
 }

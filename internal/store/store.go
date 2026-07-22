@@ -665,6 +665,12 @@ func (s *Store) DeletePage(p string, author string) error {
 	if _, err := tx.Exec(`DELETE FROM pages_fts WHERE rowid = ?`, id); err != nil {
 		return err
 	}
+	// a deleted page leaves no hit counters behind — phantom rows would
+	// otherwise resurface as stray stats, and steal a later page's counts
+	// when a rename lands on the same key
+	if _, err := tx.Exec(`DELETE FROM hits WHERE path = ?`, strings.TrimSuffix(cp, ".gmi")); err != nil {
+		return err
+	}
 	if err := dropDraft(tx, cp); err != nil {
 		return err
 	}
@@ -746,21 +752,59 @@ func (s *Store) RenamePage(oldPath, newPath, author string) (*Page, error) {
 		author+" (renamed to "+np+")", now, id); err != nil {
 		return nil, err
 	}
-	if _, err := tx.Exec(`UPDATE pages SET path = ?, updated = ? WHERE id = ?`, np, now, id); err != nil {
+
+	// The derived metadata belongs to the NAME, not just the row: a page's
+	// title can come from its filename, and its date from a YYYY-MM-DD prefix
+	// on it. Moving the row without recomputing these left a page renamed to
+	// a dated name still undated, and a filename-titled page showing its old
+	// name. Recompute from the content under the new path, exactly as
+	// SavePage would.
+	var content []byte
+	var mime string
+	if err := tx.QueryRow(`SELECT content, mime FROM pages WHERE id = ?`, id).Scan(&content, &mime); err != nil {
+		return nil, err
+	}
+	binary := isBinaryMime(mime)
+	title, date := "", ""
+	if !binary {
+		title = TitleOf(np, content, mime)
+		date = PageDate(np, content)
+	}
+	if _, err := tx.Exec(`UPDATE pages SET path = ?, title = ?, date = ?, updated = ? WHERE id = ?`,
+		np, title, date, now, id); err != nil {
 		return nil, err
 	}
 	// history follows the page
 	if _, err := tx.Exec(`UPDATE versions SET path = ? WHERE path = ?`, np, op); err != nil {
 		return nil, err
 	}
-	// stats follow it too
-	if _, err := tx.Exec(`UPDATE OR IGNORE hits SET path = ? WHERE path = ?`,
+	// stats follow it too, summed into any counts already at the destination
+	// key rather than dropped by OR IGNORE
+	if _, err := tx.Exec(`INSERT INTO hits (path, proto, count)
+		SELECT ?, proto, count FROM hits WHERE path = ?
+		ON CONFLICT(path, proto) DO UPDATE SET count = count + excluded.count`,
 		strings.TrimSuffix(np, ".gmi"), strings.TrimSuffix(op, ".gmi")); err != nil {
 		return nil, err
 	}
-	// keep the search index pointing at the right path
-	if _, err := tx.Exec(`UPDATE pages_fts SET path = ? WHERE rowid = ?`, np, id); err != nil {
+	if _, err := tx.Exec(`DELETE FROM hits WHERE path = ?`, strings.TrimSuffix(op, ".gmi")); err != nil {
 		return nil, err
+	}
+	// rebuild the search row from scratch: a plain UPDATE could not fix the
+	// two boundary cases — a page moved into hiding kept its searchable row,
+	// and a page moved out of hiding never got one. Delete, then insert only
+	// when the new name is a visible text page, as SavePage does.
+	if _, err := tx.Exec(`DELETE FROM pages_fts WHERE rowid = ?`, id); err != nil {
+		return nil, err
+	}
+	if !binary && !Hidden(np) {
+		body := string(content)
+		if strings.HasPrefix(mime, "text/gemini") {
+			body = gemtext.PlainText(body)
+		}
+		if _, err := tx.Exec(`INSERT INTO pages_fts (rowid, title, body, path) VALUES (?,?,?,?)`,
+			id, title, body, np); err != nil {
+			return nil, err
+		}
 	}
 	// unpublished work follows the page it belongs to
 	if err := renameDraft(tx, op, np); err != nil {
