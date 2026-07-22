@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jclement/starpulse/internal/script"
+	"github.com/jclement/starpulse/internal/words"
 	"github.com/jclement/starpulse/internal/store"
 )
 
@@ -29,7 +30,7 @@ var engine *script.Engine
 
 func (s *Site) engine() *script.Engine {
 	engineOnce.Do(func() {
-		engine = script.New(script.Options{Store: scriptStore{st: s.Store}})
+		engine = script.New(script.Options{Store: scriptStore{st: s.Store}, WordOK: words.Valid})
 	})
 	return engine
 }

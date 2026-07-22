@@ -85,6 +85,9 @@ type Options struct {
 	MaxValueLen int           // bytes a single store value may hold
 	MaxKeys     int           // keys a script may keep
 	Store       Store         // nil disables the store table entirely
+	// WordOK, when set, backs a words.valid(w) builtin — a dictionary the
+	// sandbox could not otherwise reach. nil hides the words table entirely.
+	WordOK func(string) bool
 }
 
 // Engine runs scripts under a fixed set of limits.
@@ -133,6 +136,14 @@ func (e *Engine) Run(ctx context.Context, scriptPath, code string, req Request) 
 	L.SetGlobal("request", r.requestTable(L))
 	if e.opts.Store != nil {
 		L.SetGlobal("store", r.storeTable(L))
+	}
+	if e.opts.WordOK != nil {
+		w := L.NewTable()
+		w.RawSetString("valid", L.NewFunction(func(L *lua.LState) int {
+			L.Push(lua.LBool(e.opts.WordOK(L.CheckString(1))))
+			return 1
+		}))
+		L.SetGlobal("words", w)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, e.opts.Timeout)
