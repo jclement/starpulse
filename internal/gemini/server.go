@@ -328,6 +328,27 @@ func (s *Server) serveScriptGemini(conn net.Conn, u *url.URL, storePath string, 
 	if fp, _ := s.authorizedCert(conn); fp != "" {
 		req.Identity, req.IdentityKind, req.Verified = fp, "cert", true
 	}
+	// Following the "make a guess" link asks for a line (status 10). A gemini
+	// response is a prompt or a body, never both, so a bare visit shows the
+	// body and offers this link rather than jumping straight to the prompt.
+	if u.RawQuery == geminiPromptMarker {
+		res, err := s.Site.RunScript(context.Background(), storePath, u.Path, req)
+		if err != nil {
+			respond(conn, 40, "script error")
+			return 40, err.Error()
+		}
+		if res.NeedInput {
+			code := 10
+			if res.Sensitive {
+				code = 11
+			}
+			respond(conn, code, res.Prompt)
+			return code, "input"
+		}
+		// the page no longer wants input — fall through and show it
+		return s.writeScriptBody(conn, res, gmi, u.Path, storePath)
+	}
+
 	if u.RawQuery != "" {
 		if dec, err := url.QueryUnescape(u.RawQuery); err == nil {
 			req.Input, req.HasInput = dec, true
@@ -338,23 +359,27 @@ func (s *Server) serveScriptGemini(conn net.Conn, u *url.URL, storePath string, 
 		respond(conn, 40, "script error")
 		return 40, err.Error()
 	}
-	if res.NeedInput && !req.HasInput {
-		code := 10
-		if res.Sensitive {
-			code = 11
-		}
-		respond(conn, code, res.Prompt)
-		return code, "input"
-	}
+	return s.writeScriptBody(conn, res, gmi, u.Path, storePath)
+}
+
+// geminiPromptMarker is the query a "make a guess" link carries; the door
+// treats it as "ask the reader for a line" rather than as input to process.
+const geminiPromptMarker = "_ask"
+
+func (s *Server) writeScriptBody(conn net.Conn, res site.ScriptResult, gmi bool, urlPath, storePath string) (int, string) {
 	mime := "text/gemini; charset=utf-8"
 	if !gmi {
 		mime = "text/plain; charset=utf-8"
 	}
 	body := res.Body
-	// after a line was given, the game goes on: offer the way back to the
-	// prompt, since gemini cannot show the board and the prompt at once
-	if res.NeedInput && req.HasInput && gmi {
-		body += "\n=> " + u.Path + " \u21b5 continue\n"
+	// the page wants a line: offer the way to give one, since gemini cannot
+	// show the body and a prompt at once
+	if res.NeedInput && gmi {
+		label := res.Prompt
+		if label == "" {
+			label = "continue"
+		}
+		body += "\n=> " + urlPath + "?" + geminiPromptMarker + " " + label + "\n"
 	}
 	respond(conn, 20, mime)
 	_, _ = io.WriteString(conn, body)

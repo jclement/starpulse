@@ -464,13 +464,22 @@ func TestScriptOverGemini(t *testing.T) {
 	if resp := ts.request(t, "gemini://localhost/g", nil, nil); !strings.Contains(resp, "anon") {
 		t.Errorf("no-cert run:\n%s", resp)
 	}
-	// with a certificate: identity present, so it renders and prompts (10)
+	// with a certificate: a bare visit shows the BOARD (20), not a prompt,
+	// and offers a link to make a guess
 	cert := makeCert(t, "player")
 	resp := ts.request(t, "gemini://localhost/g", &cert, nil)
-	if !strings.HasPrefix(resp, "10 Guess") {
-		t.Errorf("expected status 10 prompt, got:\n%s", firstLine(resp))
+	if !strings.HasPrefix(resp, "20 ") || !strings.Contains(resp, "board") {
+		t.Errorf("bare visit should show the board:\n%s", resp)
 	}
-	// a line of input arrives as the query: the script runs to a 20 body
+	if !strings.Contains(resp, "=> /g?_ask") {
+		t.Errorf("no guess link on the board:\n%s", resp)
+	}
+	// following that link asks for a line (status 10)
+	resp = ts.request(t, "gemini://localhost/g?_ask", &cert, nil)
+	if !strings.HasPrefix(resp, "10 Guess") {
+		t.Errorf("the guess link should prompt (10):\n%s", firstLine(resp))
+	}
+	// the answer comes back as the query and runs to a 20 body
 	resp = ts.request(t, "gemini://localhost/g?crane", &cert, nil)
 	if !strings.HasPrefix(resp, "20 ") || !strings.Contains(resp, "got:crane") {
 		t.Errorf("input round trip:\n%s", resp)
