@@ -5,6 +5,7 @@ package gemini
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"crypto/tls"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	"github.com/jclement/starpulse/internal/auth"
 	"github.com/jclement/starpulse/internal/config"
 	"github.com/jclement/starpulse/internal/feed"
+	"github.com/jclement/starpulse/internal/script"
 	"github.com/jclement/starpulse/internal/site"
 	"github.com/jclement/starpulse/internal/store"
 )
@@ -193,6 +195,11 @@ func (s *Server) serveGemini(conn net.Conn, u *url.URL) (int, string) {
 		}
 	}
 
+	// executable pages, run with the client certificate as identity
+	if sp, gmi, ok := s.Site.ScriptFor(u.Path); ok {
+		return s.serveScriptGemini(conn, u, sp, gmi)
+	}
+
 	// Editors (clients presenting an authorized cert) get the RAW stored
 	// source, not the assembled page. This makes titan round-trips clean:
 	// Lagrange pre-fills its editor from what it fetches, so serving the
@@ -309,6 +316,50 @@ func webToGeminiURL(p string) string {
 }
 
 // ---- titan uploads ------------------------------------------------------
+
+// serveScriptGemini runs an executable page over gemini. Identity is the
+// client certificate (proof, not a bearer token); a line of input arrives as
+// the URL query, which is exactly gemini's status-10 round trip. Since a
+// gemini response is either a prompt (10/11) or a body (20), never both, the
+// rule is: ask when no line has been given, otherwise show what the script
+// produced.
+func (s *Server) serveScriptGemini(conn net.Conn, u *url.URL, storePath string, gmi bool) (int, string) {
+	req := script.Request{Proto: s.protoFor(u.Hostname()), Host: s.Cfg.Hostname, Query: map[string]string{}}
+	if fp, _ := s.authorizedCert(conn); fp != "" {
+		req.Identity, req.IdentityKind, req.Verified = fp, "cert", true
+	}
+	if u.RawQuery != "" {
+		if dec, err := url.QueryUnescape(u.RawQuery); err == nil {
+			req.Input, req.HasInput = dec, true
+		}
+	}
+	res, err := s.Site.RunScript(context.Background(), storePath, u.Path, req)
+	if err != nil {
+		respond(conn, 40, "script error")
+		return 40, err.Error()
+	}
+	if res.NeedInput && !req.HasInput {
+		code := 10
+		if res.Sensitive {
+			code = 11
+		}
+		respond(conn, code, res.Prompt)
+		return code, "input"
+	}
+	mime := "text/gemini; charset=utf-8"
+	if !gmi {
+		mime = "text/plain; charset=utf-8"
+	}
+	body := res.Body
+	// after a line was given, the game goes on: offer the way back to the
+	// prompt, since gemini cannot show the board and the prompt at once
+	if res.NeedInput && req.HasInput && gmi {
+		body += "\n=> " + u.Path + " \u21b5 continue\n"
+	}
+	respond(conn, 20, mime)
+	_, _ = io.WriteString(conn, body)
+	return 20, "script " + storePath
+}
 
 // authorizedCert returns the client cert fingerprint if the connection
 // presented a cert on the configured allowlist.

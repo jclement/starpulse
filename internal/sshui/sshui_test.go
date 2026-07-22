@@ -918,3 +918,44 @@ func TestScansDoNotCountAsViews(t *testing.T) {
 		t.Errorf("views by path = %v, want one each", byPath)
 	}
 }
+
+// Executable pages in the terminal: the script's output is the document, and
+// when it asks for a line the browser drops into its input prompt; submitting
+// re-runs the script, which is how a game continues.
+func TestScriptInTheTUI(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	code := "if request.identity == \"\" then write(\"anon\") return end\n" +
+		"if request.has_input then write(\"you said \" .. request.input) return end\n" +
+		"write(\"board here\")\nprompt(\"Guess\")\n"
+	_, _ = st.SavePage("/g.gmi.lua", []byte(code), "", "t")
+
+	// ssh gets a session identity, so the script renders and prompts
+	m := newProtoModel(site.New(st), st, "h", false, 80, 24, lipgloss.DefaultRenderer(), "ssh")
+	m.navigate("/g", false)
+	if m.mode != modeInput || m.inputKind != inputScript {
+		t.Fatalf("script did not enter the input prompt: mode=%v kind=%v", m.mode, m.inputKind)
+	}
+	if !strings.Contains(ansi.Strip(m.View()), "board here") {
+		t.Errorf("script body not shown:\n%s", ansi.Strip(m.View()))
+	}
+
+	// type a guess and submit: the script re-runs with it
+	for _, r := range "crane" {
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if body := ansi.Strip(m.View()); !strings.Contains(body, "you said crane") {
+		t.Errorf("input resubmit did not re-run the script:\n%s", body)
+	}
+
+	// telnet has no identity, so the game says so
+	tel := newProtoModel(site.New(st), st, "h", false, 80, 24, lipgloss.DefaultRenderer(), "telnet")
+	tel.navigate("/g", false)
+	if !strings.Contains(ansi.Strip(tel.View()), "anon") {
+		t.Errorf("telnet should have no identity:\n%s", ansi.Strip(tel.View()))
+	}
+}

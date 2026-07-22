@@ -103,9 +103,14 @@ func TestRequestIsVisible(t *testing.T) {
 }
 
 func TestInputHandshake(t *testing.T) {
-	code := `local name = input("What is your name?") write("hello, " .. name)`
+	// prompt() declares a line is wanted; request.input carries the answer.
+	// The board is rendered every pass, so the door can show board + prompt.
+	code := `
+		if request.has_input then write("hello, " .. request.input) else write("board") end
+		if not request.has_input then prompt("What is your name?") end
+	`
 
-	// first call: no input yet, so the script asks for it and produces none
+	// no input yet: the script renders and asks; body is present alongside
 	res, err := exec(t, code, Request{})
 	if err != nil {
 		t.Fatal(err)
@@ -113,11 +118,11 @@ func TestInputHandshake(t *testing.T) {
 	if !res.NeedInput || res.Prompt != "What is your name?" {
 		t.Fatalf("expected an input request, got %+v", res)
 	}
-	if len(res.Body) != 0 {
-		t.Errorf("a script asking for input produced output: %q", res.Body)
+	if string(res.Body) != "board" {
+		t.Errorf("body not carried with the prompt: %q", res.Body)
 	}
 
-	// resubmit with the answer: the script runs to completion
+	// with the answer, the script completes and stops asking
 	res2, err := exec(t, code, Request{Input: "jeff", HasInput: true})
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +135,7 @@ func TestInputHandshake(t *testing.T) {
 	}
 
 	// the sensitive flag rides along
-	res3, _ := exec(t, `input("Password:", true)`, Request{})
+	res3, _ := exec(t, `prompt("Password:", true)`, Request{})
 	if !res3.NeedInput || !res3.Sensitive {
 		t.Errorf("sensitive input not flagged: %+v", res3)
 	}

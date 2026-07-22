@@ -121,6 +121,12 @@ func (s *Site) Resolve(urlPath, proto string) *Result {
 	if !ok {
 		return &Result{Type: NotFound}
 	}
+	// executable pages are reached through their served URL (/wordle), never
+	// by their source path (/wordle.gmi.lua) — serving the raw Lua would leak
+	// the program and run nothing.
+	if strings.HasSuffix(cleaned, ".lua") {
+		return &Result{Type: NotFound}
+	}
 
 	if strings.HasSuffix(cleaned, "/") || cleaned == "/" {
 		dir := cleaned

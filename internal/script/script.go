@@ -129,7 +129,7 @@ func (e *Engine) Run(ctx context.Context, scriptPath, code string, req Request) 
 
 	r := &run{eng: e, script: scriptPath, req: req}
 	L.SetGlobal("write", L.NewFunction(r.write))
-	L.SetGlobal("input", L.NewFunction(r.input))
+	L.SetGlobal("prompt", L.NewFunction(r.prompt_))
 	L.SetGlobal("request", r.requestTable(L))
 	if e.opts.Store != nil {
 		L.SetGlobal("store", r.storeTable(L))
@@ -140,12 +140,6 @@ func (e *Engine) Run(ctx context.Context, scriptPath, code string, req Request) 
 	L.SetContext(ctx)
 
 	err := L.DoString(code)
-
-	// input() aborts the script with a Lua error to unwind the stack; the
-	// flag, not the error, is how we tell that apart from a real fault.
-	if r.needInput {
-		return Result{NeedInput: true, Prompt: r.prompt, Sensitive: r.sensitive}, nil
-	}
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return Result{}, fmt.Errorf("script exceeded its %s time limit", e.opts.Timeout)
@@ -159,6 +153,12 @@ func (e *Engine) Run(ctx context.Context, scriptPath, code string, req Request) 
 		if s, ok := returnedString(L); ok {
 			body = s
 		}
+	}
+	// prompt() sets needInput but does not abort, so the whole body (a game
+	// board, say) is here as well as the request for the next line: the web
+	// and TUI show both, gemini sends status 10 with just the prompt.
+	if r.needInput {
+		return Result{Body: []byte(body), NeedInput: true, Prompt: r.prompt, Sensitive: r.sensitive}, nil
 	}
 	return Result{Body: []byte(body)}, nil
 }
@@ -179,20 +179,14 @@ func (r *run) write(L *lua.LState) int {
 	return 0
 }
 
-// input returns a line the caller already provided, or aborts the run asking
-// for one. The gemini door turns that into status 10/11; the TUI into its
-// prompt; the web door into a form.
-func (r *run) input(L *lua.LState) int {
-	prompt := L.OptString(1, "")
-	sensitive := L.OptBool(2, false)
-	if r.req.HasInput {
-		L.Push(lua.LString(r.req.Input))
-		return 1
-	}
+// prompt declares that the script wants a line of input from the reader,
+// without stopping — the script goes on to render its full output, and the
+// door decides how to ask (a web form, the TUI prompt, gemini status 10/11).
+// The submitted line, when there is one, is request.input.
+func (r *run) prompt_(L *lua.LState) int {
+	r.prompt = L.OptString(1, "")
+	r.sensitive = L.OptBool(2, false)
 	r.needInput = true
-	r.prompt = prompt
-	r.sensitive = sensitive
-	L.RaiseError("input requested") // unwinds; detection is via r.needInput
 	return 0
 }
 
@@ -205,6 +199,8 @@ func (r *run) requestTable(L *lua.LState) *lua.LTable {
 	t.RawSetString("identity", lua.LString(r.req.Identity))
 	t.RawSetString("identity_kind", lua.LString(r.req.IdentityKind))
 	t.RawSetString("identity_verified", lua.LBool(r.req.Verified))
+	t.RawSetString("input", lua.LString(r.req.Input))
+	t.RawSetString("has_input", lua.LBool(r.req.HasInput))
 	q := L.NewTable()
 	for k, v := range r.req.Query {
 		q.RawSetString(k, lua.LString(v))

@@ -1,6 +1,9 @@
 package sshui
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"net/url"
 	"strings"
@@ -13,6 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/jclement/starpulse/internal/script"
 	"github.com/jclement/starpulse/internal/site"
 	"github.com/jclement/starpulse/internal/store"
 )
@@ -33,6 +37,7 @@ const (
 	inputGoto inputKind = iota
 	inputSearch
 	inputNewPath
+	inputScript
 )
 
 // model is the SSH TUI: a gemini browser, plus editing when admin.
@@ -48,6 +53,9 @@ type model struct {
 	live       bool
 	pendingHit string
 	nowFolder  string
+	identity   string // per-session id handed to executable pages ("" = none)
+	scriptPath string // the .lua page currently showing, for input resubmits
+	scriptGmi  bool
 	renderer   *lipgloss.Renderer
 	st         *styles
 
@@ -99,12 +107,17 @@ func newProtoModel(sy *site.Site, st *store.Store, hostname string, admin bool, 
 	if renderer == nil {
 		renderer = lipgloss.DefaultRenderer()
 	}
+	identity := ""
+	if strings.Contains(proto, "ssh") {
+		identity = newSessionID() // stable within the connection
+	}
 	m := &model{
 		site:      sy,
 		store:     st,
 		hostname:  hostname,
 		admin:     admin,
 		proto:     proto,
+		identity:  identity,
 		nowFolder: "/now/",
 		renderer:  renderer,
 		st:        makeStyles(renderer),
@@ -121,6 +134,14 @@ func (m *model) Init() tea.Cmd { return nil }
 // ---- navigation ---------------------------------------------------------
 
 func (m *model) navigate(url string, pushHistory bool) {
+	if sp, gmi, ok := m.site.ScriptFor(url); ok {
+		if pushHistory && m.url != "" && m.url != url {
+			m.history = append(m.history, m.url)
+		}
+		m.runScript(sp, url, gmi, "", false)
+		return
+	}
+	m.scriptPath = ""
 	// /search is not a page anywhere — the web and gemini doors each build it
 	// on the fly — so following the site's own "search the capsule" link fell
 	// through to "not found". Here it opens the same prompt "/" does, and a
@@ -211,6 +232,44 @@ func (m *model) wake() {
 		m.site.Count(m.pendingHit, m.proto)
 		m.pendingHit = ""
 	}
+}
+
+// runScript runs an executable page and shows its output, entering the input
+// prompt when the script asks for a line. Re-running with that line is what
+// makes the game continue.
+func (m *model) runScript(storePath, url string, gmi bool, input string, hasInput bool) {
+	req := script.Request{
+		Proto: m.proto, Host: m.hostname, Query: map[string]string{},
+		Input: input, HasInput: hasInput,
+	}
+	if m.identity != "" {
+		req.Identity, req.IdentityKind, req.Verified = m.identity, "session", false
+	}
+	res, err := m.site.RunScript(context.Background(), storePath, url, req)
+	if err != nil {
+		m.setStatus("script error: "+err.Error(), true)
+		return
+	}
+	m.url = url
+	m.title = url
+	m.sourcePath = ""
+	m.gmi = res.Body
+	m.scriptPath = storePath
+	m.scriptGmi = gmi
+	m.sel = -1
+	m.refresh(true)
+	if res.NeedInput {
+		m.prompt(inputScript, res.Prompt, "")
+	} else {
+		m.mode = modeBrowse
+		m.setStatus("", false)
+	}
+}
+
+func newSessionID() string {
+	b := make([]byte, 12)
+	_, _ = rand.Read(b)
+	return base64.RawURLEncoding.EncodeToString(b)
 }
 
 func (m *model) showDoc(url, title, gmi string) {
@@ -535,6 +594,10 @@ func (m *model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.startEdit(cp, true)
+		case inputScript:
+			if m.scriptPath != "" {
+				m.runScript(m.scriptPath, m.url, m.scriptGmi, val, true)
+			}
 		}
 		return m, nil
 	}

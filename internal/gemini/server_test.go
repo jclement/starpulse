@@ -450,3 +450,33 @@ func firstLine(s string) string {
 	}
 	return s
 }
+
+// Executable pages over gemini: identity is the client certificate, and a
+// line of input is the URL query — gemini's status-10 round trip.
+func TestScriptOverGemini(t *testing.T) {
+	ts := startServer(t)
+	code := "if request.identity == \"\" then write(\"anon\") return end\n" +
+		"if request.has_input then write(\"got:\" .. request.input) return end\n" +
+		"write(\"board\")\nprompt(\"Guess\")\n"
+	_, _ = ts.st.SavePage("/g.gmi.lua", []byte(code), "", "t")
+
+	// no certificate: the script sees no identity
+	if resp := ts.request(t, "gemini://localhost/g", nil, nil); !strings.Contains(resp, "anon") {
+		t.Errorf("no-cert run:\n%s", resp)
+	}
+	// with a certificate: identity present, so it renders and prompts (10)
+	cert := makeCert(t, "player")
+	resp := ts.request(t, "gemini://localhost/g", &cert, nil)
+	if !strings.HasPrefix(resp, "10 Guess") {
+		t.Errorf("expected status 10 prompt, got:\n%s", firstLine(resp))
+	}
+	// a line of input arrives as the query: the script runs to a 20 body
+	resp = ts.request(t, "gemini://localhost/g?crane", &cert, nil)
+	if !strings.HasPrefix(resp, "20 ") || !strings.Contains(resp, "got:crane") {
+		t.Errorf("input round trip:\n%s", resp)
+	}
+	// the raw .lua source is never served
+	if resp := ts.request(t, "gemini://localhost/g.gmi.lua", nil, nil); !strings.HasPrefix(resp, "51") {
+		t.Errorf("raw .lua was served: %s", firstLine(resp))
+	}
+}

@@ -140,7 +140,7 @@ func Open(dbPath string) (*Store, error) {
 	}
 	// modernc sqlite is happiest with one writer connection
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema + draftSchema); err != nil {
+	if _, err := db.Exec(schema + draftSchema + scriptKVSchema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("initializing schema: %w", err)
 	}
@@ -672,6 +672,9 @@ func (s *Store) DeletePage(p string, author string) error {
 		return err
 	}
 	if err := dropDraft(tx, cp); err != nil {
+		return err
+	}
+	if err := dropScriptKV(tx, cp); err != nil {
 		return err
 	}
 	return tx.Commit()

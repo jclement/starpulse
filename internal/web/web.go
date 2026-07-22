@@ -315,6 +315,9 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	if s.serveFeed(w, r, r.URL.Path) {
 		return
 	}
+	if s.serveScript(w, r) {
+		return
+	}
 	res := s.Site.Resolve(r.URL.Path, s.proto(r))
 	switch res.Type {
 	case site.RedirectResult:
