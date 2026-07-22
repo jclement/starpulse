@@ -251,6 +251,11 @@ func DoctorLinks(cfg *config.Config) error {
 				continue
 			}
 			checked++
+			// an executable page answers its URL through serveScript, not
+			// the resolver, so ScriptFor is what says it exists
+			if _, _, ok := sy.ScriptFor(target); ok {
+				continue
+			}
 			if sy.Resolve(target, "").Type == site.NotFound {
 				dead++
 				fmt.Printf("  %s✗%s %s%s%s  →  %s\n", cRed, cReset, cDim, from, cReset, u)

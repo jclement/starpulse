@@ -36,3 +36,20 @@ func TestDoctorLinksFindsDeadInternalLinks(t *testing.T) {
 		t.Errorf("want 2 dead links, got: %v", err)
 	}
 }
+
+func TestDoctorLinksAllowsScriptPages(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(filepath.Join(dir, "starpulse.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = st.SavePage("/index.gmi", []byte("# Home\n\n=> /word a game\n"), "", "t")
+	_, _ = st.SavePage("/word.gmi.lua", []byte("write(\"hi\")"), "", "t")
+	st.Close()
+	cfg := config.Default()
+	cfg.DataDir = dir
+	cfg.Hostname = "test"
+	if err := DoctorLinks(cfg); err != nil {
+		t.Errorf("a link to a script page was reported dead: %v", err)
+	}
+}
