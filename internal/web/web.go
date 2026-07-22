@@ -52,7 +52,7 @@ var pageTpl = template.Must(template.New("page").Parse(`<!DOCTYPE html>
 {{.Body}}
 </main>
 <footer class="site">
-<p>{{if .EditPath}}<a class="edit-link" href="/admin/edit?path={{.EditPath}}">✎ edit</a> · <a class="edit-link" href="/admin">admin</a> · {{end}}also on gemini: <a href="gemini://{{.Host}}/">gemini://{{.Host}}/</a> · <a href="/search">search</a> · served by <a href="https://github.com/jclement/starpulse">starpulse</a></p>
+<p>{{if .EditPath}}<a class="edit-link" href="/admin/edit?path={{.EditPath}}">✎ edit</a> · <a class="edit-link" href="/admin">admin</a> · {{end}}also on gemini: <a href="gemini://{{.Host}}{{.GemPath}}">gemini://{{.Host}}{{.GemPath}}</a> · <a href="/search">search</a> · served by <a href="https://github.com/jclement/starpulse">starpulse</a></p>
 </footer>
 </body>
 </html>
@@ -65,6 +65,7 @@ type pageData struct {
 	Body      template.HTML
 	Theme     template.CSS
 	EditPath  string // set when logged in and the page has an editable source
+	GemPath   string // this page's path on gemini (root for admin/login)
 	AssetV    string // cache-buster for embedded assets
 	Feeds     []config.Feed
 	Highlight bool
@@ -263,6 +264,12 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, titl
 	if !s.loggedIn(r) {
 		editPath = ""
 	}
+	// the "also on gemini" link points at this same page; admin and login
+	// pages have no gemini equivalent, so they fall back to the capsule root
+	gemPath := r.URL.Path
+	if gemPath == "" || strings.HasPrefix(gemPath, "/admin") || strings.HasPrefix(gemPath, "/login") {
+		gemPath = "/"
+	}
 	_ = pageTpl.Execute(w, pageData{
 		Title:     title,
 		Desc:      desc,
@@ -270,6 +277,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, titl
 		Body:      template.HTML(wrapEmoji(body)),
 		Theme:     template.CSS(theme),
 		EditPath:  editPath,
+		GemPath:   gemPath,
 		AssetV:    site.BuildVersion,
 		Feeds:     s.discoverableFeeds(),
 		Highlight: s.Cfg.Highlight.Enabled,

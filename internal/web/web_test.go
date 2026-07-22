@@ -1219,3 +1219,35 @@ func TestOnionClaimsNeedToComeFromTor(t *testing.T) {
 		t.Errorf("ordinary request bucketed as %q", got)
 	}
 }
+
+// The "also on gemini" footer should point at the same page on gemini, not
+// always the root.
+func TestGeminiFooterLinksToTheSamePage(t *testing.T) {
+	_, st, ts := testServer(t)
+	_, _ = st.SavePage("/index.gmi", []byte("# Home"), "", "t")
+	_, _ = st.SavePage("/posts/hi.gmi", []byte("# Hi"), "", "t")
+
+	page := func(path string) string {
+		resp, err := http.Get(ts.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return string(b)
+	}
+	if !strings.Contains(page("/posts/hi"), `href="gemini://test.example/posts/hi"`) {
+		t.Error("footer does not link to the same page on gemini")
+	}
+	if !strings.Contains(page("/"), `href="gemini://test.example/"`) {
+		t.Error("home footer should be the gemini root")
+	}
+	// admin has no gemini equivalent — falls back to root
+	client := login(t, ts, testPassword)
+	resp, _ := client.Get(ts.URL + "/admin")
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if strings.Contains(string(b), `gemini://test.example/admin`) {
+		t.Error("admin page linked to a nonexistent gemini path")
+	}
+}
