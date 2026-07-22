@@ -27,6 +27,12 @@ function sp.identity()
   return request.identity
 end
 
+-- name() is a human name for the identity — a gemini certificate's common
+-- name — or "" when there is none.
+function sp.name()
+  return request.identity_name
+end
+
 -- verified() reports whether the identity is cryptographically bound — a
 -- gemini client certificate or an ssh key — rather than a bearer cookie a
 -- browser hands over. A page that matters should not trust a cookie the way

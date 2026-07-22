@@ -51,6 +51,7 @@ type Request struct {
 	// cookie) — a distinction a script must be able to see before trusting it.
 	Identity     string
 	IdentityKind string // "cert" | "sshkey" | "cookie" | ""
+	IdentityName string // a human name for the identity (a cert's CN), or ""
 	Verified     bool
 
 	// Input is a line the caller has already collected for this run — a
@@ -207,6 +208,7 @@ func (r *run) requestTable(L *lua.LState) *lua.LTable {
 	t.RawSetString("now", lua.LNumber(r.req.Now.Unix()))
 	t.RawSetString("identity", lua.LString(r.req.Identity))
 	t.RawSetString("identity_kind", lua.LString(r.req.IdentityKind))
+	t.RawSetString("identity_name", lua.LString(r.req.IdentityName))
 	t.RawSetString("identity_verified", lua.LBool(r.req.Verified))
 	t.RawSetString("input", lua.LString(r.req.Input))
 	t.RawSetString("has_input", lua.LBool(r.req.HasInput))

@@ -484,8 +484,15 @@ func TestScriptOverGemini(t *testing.T) {
 	if !strings.HasPrefix(resp, "20 ") || !strings.Contains(resp, "got:crane") {
 		t.Errorf("input round trip:\n%s", resp)
 	}
-	// the raw .lua source is never served
+	// the raw source is never served
 	if resp := ts.request(t, "gemini://localhost/g.gmi.cgi", nil, nil); !strings.HasPrefix(resp, "51") {
-		t.Errorf("raw .lua was served: %s", firstLine(resp))
+		t.Errorf("raw source was served: %s", firstLine(resp))
+	}
+
+	// a certificate's common name reaches the script as request.identity_name
+	_, _ = ts.st.SavePage("/who.gmi.cgi", []byte("<?\nwrite(sp.name())"), "", "t")
+	named := makeCert(t, "Ada Lovelace")
+	if resp := ts.request(t, "gemini://localhost/who", &named, nil); !strings.Contains(resp, "Ada Lovelace") {
+		t.Errorf("cert CN not exposed:\n%s", resp)
 	}
 }

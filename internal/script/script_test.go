@@ -343,6 +343,9 @@ func TestSpPrelude(t *testing.T) {
 	if got, _ := run(`write(tostring(sp.verified()))`, Request{Verified: true}); string(got.Body) != "true" {
 		t.Errorf("sp.verified: %q", got.Body)
 	}
+	if got, _ := run(`write(sp.name())`, Request{IdentityName: "Jeff"}); string(got.Body) != "Jeff" {
+		t.Errorf("sp.name: %q", got.Body)
+	}
 
 	// kv helpers
 	run(`sp.set("name", "jeff")`, Request{})
@@ -357,5 +360,38 @@ func TestSpPrelude(t *testing.T) {
 	res, _ = run(`sp.push("log","a") sp.push("log","b") local l=sp.list("log") write(#l..":"..l[1]..l[2]..":"..tostring(sp.has(l,"b")))`, Request{})
 	if string(res.Body) != "2:ab:true" {
 		t.Errorf("sp.list/push/has: %q", res.Body)
+	}
+}
+
+// The leaderboard pattern Wordwell uses: only a verified identity with a name
+// is recorded, and entries are read back and shown.
+func TestLeaderboardPattern(t *testing.T) {
+	e := New(Options{Store: newMemStore()})
+	code := "<?\n" +
+		"if request.identity_verified and sp.name() ~= \"\" then\n" +
+		"  sp.push(\"board\", request.identity .. \"\\t\" .. sp.name() .. \"\\t3\")\n" +
+		"end\n" +
+		"for _, row in ipairs(sp.list(\"board\")) do\n" +
+		"  local nm, n = row:match(\"^.-\\t(.-)\\t(%d+)$\")\n" +
+		"  if nm then write(\"* \", nm, \" \", n, \"\\n\") end\n" +
+		"end"
+	run := func(req Request) string {
+		res, err := e.Run(context.Background(), "/b.cgi", Compile(code), req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(res.Body)
+	}
+	// a verified, named identity is recorded and shown
+	if got := run(Request{Identity: "fp1", IdentityName: "Ada", Verified: true}); !strings.Contains(got, "* Ada 3") {
+		t.Errorf("verified named not recorded: %q", got)
+	}
+	// an unverified one (a cookie) is not
+	if got := run(Request{Identity: "fp2", IdentityName: "Bob", Verified: false}); strings.Contains(got, "Bob") {
+		t.Errorf("an unverified identity reached the board: %q", got)
+	}
+	// a verified but nameless one is not
+	if got := run(Request{Identity: "fp3", Verified: true}); strings.Count(got, "*") != 1 {
+		t.Errorf("a nameless identity reached the board: %q", got)
 	}
 }

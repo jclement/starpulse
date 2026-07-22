@@ -325,8 +325,12 @@ func webToGeminiURL(p string) string {
 // produced.
 func (s *Server) serveScriptGemini(conn net.Conn, u *url.URL, storePath string, gmi bool) (int, string) {
 	req := script.Request{Proto: s.protoFor(u.Hostname()), Host: s.Cfg.Hostname, Query: map[string]string{}}
-	if fp, _ := s.authorizedCert(conn); fp != "" {
-		req.Identity, req.IdentityKind, req.Verified = fp, "cert", true
+	if tlsConn, ok := conn.(*tls.Conn); ok {
+		if certs := tlsConn.ConnectionState().PeerCertificates; len(certs) > 0 {
+			req.Identity = auth.Fingerprint(sha256.Sum256(certs[0].Raw))
+			req.IdentityKind, req.Verified = "cert", true
+			req.IdentityName = certs[0].Subject.CommonName
+		}
 	}
 	// Following the "make a guess" link asks for a line (status 10). A gemini
 	// response is a prompt or a body, never both, so a bare visit shows the
