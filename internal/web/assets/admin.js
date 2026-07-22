@@ -429,9 +429,29 @@
     return out;
   }
 
+  // .cgi templates: gemtext text with <? … ?> lua islands. Highlight each
+  // region with the matching pass and mark the tags.
+  function cgi(src) {
+    var out = "", i = 0;
+    while (i < src.length) {
+      var open = src.indexOf("<?", i);
+      if (open < 0) { out += gemtext(src.slice(i)); break; }
+      out += gemtext(src.slice(i, open));
+      var echo = src.charAt(open + 2) === "=";
+      var tag = echo ? "<?=" : "<?";
+      var close = src.indexOf("?>", open + tag.length);
+      var code, closeTag = "";
+      if (close < 0) { code = src.slice(open + tag.length); i = src.length; }
+      else { code = src.slice(open + tag.length, close); i = close + 2; closeTag = "?>"; }
+      out += '<span class="cgi-tag">' + esc(tag) + "</span>" + lua(code);
+      if (closeTag) out += '<span class="cgi-tag">' + esc(closeTag) + "</span>";
+    }
+    return out;
+  }
+
   function pick() {
     var p = (path && path.value) || "";
-    if (/\.lua$/.test(p)) return lua;
+    if (/\.cgi$/.test(p)) return cgi;
     if (/\.feed$/.test(p)) return keyvals;
     if (/\.(css)$/.test(p)) return css;
     if (/\.(gmi|gemini)$/.test(p) || p === "" || !/\.[a-z0-9]+$/i.test(p)) return gemtext;

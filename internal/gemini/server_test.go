@@ -455,10 +455,10 @@ func firstLine(s string) string {
 // line of input is the URL query — gemini's status-10 round trip.
 func TestScriptOverGemini(t *testing.T) {
 	ts := startServer(t)
-	code := "if request.identity == \"\" then write(\"anon\") return end\n" +
+	code := "<?\nif request.identity == \"\" then write(\"anon\") return end\n" +
 		"if request.has_input then write(\"got:\" .. request.input) return end\n" +
 		"write(\"board\")\nprompt(\"Guess\")\n"
-	_, _ = ts.st.SavePage("/g.gmi.lua", []byte(code), "", "t")
+	_, _ = ts.st.SavePage("/g.gmi.cgi", []byte(code), "", "t")
 
 	// no certificate: the script sees no identity
 	if resp := ts.request(t, "gemini://localhost/g", nil, nil); !strings.Contains(resp, "anon") {
@@ -476,7 +476,7 @@ func TestScriptOverGemini(t *testing.T) {
 		t.Errorf("input round trip:\n%s", resp)
 	}
 	// the raw .lua source is never served
-	if resp := ts.request(t, "gemini://localhost/g.gmi.lua", nil, nil); !strings.HasPrefix(resp, "51") {
+	if resp := ts.request(t, "gemini://localhost/g.gmi.cgi", nil, nil); !strings.HasPrefix(resp, "51") {
 		t.Errorf("raw .lua was served: %s", firstLine(resp))
 	}
 }

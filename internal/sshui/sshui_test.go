@@ -928,10 +928,10 @@ func TestScriptInTheTUI(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	code := "if request.identity == \"\" then write(\"anon\") return end\n" +
+	code := "<?\nif request.identity == \"\" then write(\"anon\") return end\n" +
 		"if request.has_input then write(\"you said \" .. request.input) return end\n" +
 		"write(\"board here\")\nprompt(\"Guess\")\n"
-	_, _ = st.SavePage("/g.gmi.lua", []byte(code), "", "t")
+	_, _ = st.SavePage("/g.gmi.cgi", []byte(code), "", "t")
 
 	// ssh gets a session identity, so the script renders and prompts
 	m := newProtoModel(site.New(st), st, "h", false, 80, 24, lipgloss.DefaultRenderer(), "ssh")

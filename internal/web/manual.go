@@ -65,6 +65,15 @@ func (s *Server) adminManual(w http.ResponseWriter, r *http.Request) {
 <p>Opening a page that has a draft continues the draft rather than starting from what is live, so there is no way to lose it by accident. Drafts keep their own history while you work, and publishing records <em>one</em> entry in the page's history however many times you saved along the way. <strong>Discard</strong> throws the draft away; if the page was never published, that removes it entirely.</p>
 <p>Only this editor writes drafts. Titan, the API, MCP and the terminal editors publish directly — there is no way to express "unpublished" over those, so they say what they mean. Backups carry drafts under <code>drafts/</code>, and restoring puts them back as drafts.</p>
 
+<h2>Executable pages</h2>
+<p>A page whose name ends <code>.cgi</code> is a program. <code>/game.gmi.cgi</code> is served at <code>/game</code>, its output rendered as gemtext (a <code>.txt.cgi</code> serves plain text); the raw source is never served. They are templates, like PHP: text is emitted as-is, code lives in <code>&lt;? … ?&gt;</code>, and <code>&lt;?= expr ?&gt;</code> writes a value. A page that is all program simply opens with <code>&lt;?</code> and never closes.</p>
+<pre># Hello
+Hi <?= sp.identity() ?>, it is <?= request.now ?>.
+&lt;? for _, e in ipairs(sp.list("guests")) do ?&gt;
+* <?= e ?>
+&lt;? end ?&gt;</pre>
+<p>The sandbox is Lua with no filesystem, network or clock beyond what it is handed: <code>request</code> (path, query, proto, host, and identity), <code>write()</code>, <code>prompt()</code> to ask the reader for a line (a web form, gemini status 10, the terminal prompt), and a per-page key/value <code>store</code>. The <code>sp</code> library wraps the common patterns — <code>sp.require_identity()</code>, <code>sp.require_strong()</code> (a certificate or ssh key, not a cookie), <code>sp.get/set</code>, <code>sp.list/push</code>. CPU and output are capped. Script data is included in backups.</p>
+
 <h2>Backups</h2>
 <p><a href="/admin/backup">Backup</a> downloads a zip of plain files — <code>content/about.gmi</code> is the page at <code>/about.gmi</code>, byte for byte — named for this site and the moment it was taken. Version history and view counts stay behind: a backup is the content.</p>
 <p>Restoring the zip <strong>merges</strong> by default (adds and overwrites what it contains, leaves the rest); <strong>replace</strong> also deletes pages the backup does not contain. Overwritten pages keep their history, so a restore is undoable page by page. Optionally the zip can carry your tor hidden-service key, TLS certificates and ssh host key under <code>keys/</code> — restoring never touches those, so keep that copy somewhere safe.</p>

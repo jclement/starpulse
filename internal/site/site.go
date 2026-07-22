@@ -122,9 +122,9 @@ func (s *Site) Resolve(urlPath, proto string) *Result {
 		return &Result{Type: NotFound}
 	}
 	// executable pages are reached through their served URL (/wordle), never
-	// by their source path (/wordle.gmi.lua) — serving the raw Lua would leak
-	// the program and run nothing.
-	if strings.HasSuffix(cleaned, ".lua") {
+	// by their source path (/wordle.gmi.cgi) — serving the raw template would
+	// leak the program and run nothing.
+	if strings.HasSuffix(cleaned, ".cgi") {
 		return &Result{Type: NotFound}
 	}
 

@@ -367,8 +367,8 @@ func TestBackupDraftPathsRejectEscapes(t *testing.T) {
 // guestbook's entries would otherwise vanish on a restore.
 func TestBackupCarriesScriptData(t *testing.T) {
 	_, st, ts := testServer(t)
-	_ = st.ScriptKVSet("/guestbook.gmi.lua", "entries", "alice\nbob\n")
-	_ = st.ScriptKVSet("/counter.gmi.lua", "hits", "42")
+	_ = st.ScriptKVSet("/guestbook.gmi.cgi", "entries", "alice\nbob\n")
+	_ = st.ScriptKVSet("/counter.gmi.cgi", "hits", "42")
 	client := login(t, ts, testPassword)
 
 	resp, err := client.Get(ts.URL + "/admin/backup.zip")
@@ -382,14 +382,14 @@ func TestBackupCarriesScriptData(t *testing.T) {
 	}
 
 	// wipe the data, restore, and check it returns exactly
-	st.ScriptKVDelete("/guestbook.gmi.lua", "entries")
-	st.ScriptKVDelete("/counter.gmi.lua", "hits")
+	st.ScriptKVDelete("/guestbook.gmi.cgi", "entries")
+	st.ScriptKVDelete("/counter.gmi.cgi", "hits")
 	postZip(t, client, ts.URL, "merge", data)
 
-	if v, ok := st.ScriptKVGet("/guestbook.gmi.lua", "entries"); !ok || v != "alice\nbob\n" {
+	if v, ok := st.ScriptKVGet("/guestbook.gmi.cgi", "entries"); !ok || v != "alice\nbob\n" {
 		t.Errorf("guestbook data not restored: %q %v", v, ok)
 	}
-	if v, ok := st.ScriptKVGet("/counter.gmi.lua", "hits"); !ok || v != "42" {
+	if v, ok := st.ScriptKVGet("/counter.gmi.cgi", "hits"); !ok || v != "42" {
 		t.Errorf("counter not restored: %q %v", v, ok)
 	}
 }

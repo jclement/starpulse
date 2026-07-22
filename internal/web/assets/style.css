@@ -704,3 +704,7 @@ pre.diff .add { display: block; background: color-mix(in srgb, #2c8a6d 16%, tran
 pre.diff .del { display: block; background: color-mix(in srgb, #b3402a 16%, transparent); }
 pre.diff .ctx { display: block; color: var(--dim); }
 pre.diff .hunk { display: block; color: var(--dim); font-style: italic; }
+
+/* <? ?> tags in a .cgi template */
+.cgi-tag { color: #b3402a; font-weight: 600; }
+@media (prefers-color-scheme: dark) { .cgi-tag { color: #e08a6a; } }

@@ -96,6 +96,10 @@ starpulse version
 - **Notes**: short entries. A note *is* a page — the only difference is that
   the server names the file for you — so it gets history, search and feeds
   like everything else.
+- **Executable pages**: a page ending `.cgi` is a sandboxed Lua template
+  (PHP-style `<? … ?>`), served like any page over every door, with a
+  per-page key/value store and an identity model (gemini cert, ssh key, or a
+  web cookie). No filesystem, no network; CPU and output bounded.
 - **Drafts**: save without publishing. The site keeps showing the published
   version, and a never-published page is absent everywhere — no 404 hunting,
   no listing leaks, because drafts live in their own table that nothing

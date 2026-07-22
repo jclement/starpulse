@@ -63,9 +63,9 @@ func (s *Site) ScriptFor(urlPath string) (storePath string, gemtext bool, ok boo
 		suffix  string
 		gemtext bool
 	}{
-		{".gmi.lua", true},
-		{".txt.lua", false},
-		{".lua", true}, // bare .lua defaults to gemtext, the native format
+		{".gmi.cgi", true},
+		{".txt.cgi", false},
+		{".cgi", true}, // a bare .cgi defaults to gemtext, the native format
 	} {
 		p := cleaned + c.suffix
 		if s.Store.PageExists(p) {
@@ -88,7 +88,8 @@ func (s *Site) RunScript(ctx context.Context, storePath, urlPath string, req scr
 	if req.Now.IsZero() {
 		req.Now = time.Now().In(s.loc())
 	}
-	res, err := s.engine().Run(ctx, storePath, string(pg.Content), req)
+	// the page is a template — text with <? … ?> code — compiled to Lua
+	res, err := s.engine().Run(ctx, storePath, script.Compile(string(pg.Content)), req)
 	if err != nil {
 		return ScriptResult{SourcePath: storePath, Gemtext: gemtext}, err
 	}

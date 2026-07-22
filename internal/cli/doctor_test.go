@@ -44,7 +44,7 @@ func TestDoctorLinksAllowsScriptPages(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, _ = st.SavePage("/index.gmi", []byte("# Home\n\n=> /word a game\n"), "", "t")
-	_, _ = st.SavePage("/word.gmi.lua", []byte("write(\"hi\")"), "", "t")
+	_, _ = st.SavePage("/word.gmi.cgi", []byte("write(\"hi\")"), "", "t")
 	st.Close()
 	cfg := config.Default()
 	cfg.DataDir = dir

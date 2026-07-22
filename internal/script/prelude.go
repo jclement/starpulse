@@ -9,6 +9,12 @@ package script
 const prelude = `
 sp = {}
 
+-- __tostr backs <?= expr ?>: nil prints as nothing, not "nil".
+function __tostr(v)
+  if v == nil then return "" end
+  return tostring(v)
+end
+
 -- stop() ends the script early and cleanly. It raises a sentinel the engine
 -- recognises as a normal finish, not a failure, so whatever was written so
 -- far is what the reader gets.
