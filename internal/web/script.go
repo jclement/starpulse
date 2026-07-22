@@ -103,7 +103,7 @@ func scriptInputForm(path string, q map[string][]string, prompt string, sensitiv
 	if prompt != "" {
 		b.WriteString(`<label for="script-input">` + html.EscapeString(prompt) + `</label>`)
 	}
-	b.WriteString(`<input id="script-input" type="` + typ + `" name="input" autofocus autocomplete="off">`)
+	b.WriteString(`<input id="script-input" type="` + typ + `" name="input" autocomplete="off">`)
 	b.WriteString(`<button type="submit">send</button></form>`)
 	return b.String()
 }
