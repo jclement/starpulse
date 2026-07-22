@@ -139,12 +139,21 @@ func (e *Engine) Run(ctx context.Context, scriptPath, code string, req Request) 
 	defer cancel()
 	L.SetContext(ctx)
 
+	// the standard helpers load first, as their own chunk, so a user
+	// script's error line numbers stay its own
+	if err := L.DoString(prelude); err != nil {
+		return Result{}, fmt.Errorf("prelude failed to load: %w", err)
+	}
+
 	err := L.DoString(code)
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return Result{}, fmt.Errorf("script exceeded its %s time limit", e.opts.Timeout)
 		}
-		return Result{}, scriptError(err)
+		// sp.stop() is a clean early finish, not a fault
+		if !strings.Contains(err.Error(), spStop) {
+			return Result{}, scriptError(err)
+		}
 	}
 
 	// a script may write(), or simply return a string, or both — write wins

@@ -286,3 +286,57 @@ func TestCallerContextCancels(t *testing.T) {
 
 // words.valid is a host-provided builtin (a dictionary the sandbox cannot
 // reach on its own); it only appears when the host supplies one.
+
+// The sp prelude is a Lua standard library over request/store/write. It adds
+// no capability — but it must load before every script and its stop() must
+// read as a clean finish.
+func TestSpPrelude(t *testing.T) {
+	ms := newMemStore()
+	e := New(Options{Store: ms})
+	run := func(code string, req Request) (Result, error) {
+		return e.Run(context.Background(), "/s.lua", code, req)
+	}
+
+	// require_identity: returns the id when present
+	res, err := run(`write(sp.require_identity())`, Request{Identity: "abc"})
+	if err != nil || string(res.Body) != "abc" {
+		t.Errorf("require_identity with an id: %q %v", res.Body, err)
+	}
+	// and stops with a standard message when absent — cleanly, not an error
+	res, err = run(`write("before ") sp.require_identity("who are you?") write(" after")`,
+		Request{Proto: "https"})
+	if err != nil {
+		t.Fatalf("require_identity stop reported an error: %v", err)
+	}
+	if !strings.Contains(string(res.Body), "who are you?") {
+		t.Errorf("standard message missing: %q", res.Body)
+	}
+	if strings.Contains(string(res.Body), "after") {
+		t.Errorf("script kept running past require_identity: %q", res.Body)
+	}
+
+	// the door tailors the hint
+	res, _ = run(`sp.require_identity()`, Request{Proto: "gemini"})
+	if !strings.Contains(string(res.Body), "certificate") {
+		t.Errorf("gemini hint missing: %q", res.Body)
+	}
+	res, _ = run(`sp.require_identity()`, Request{Proto: "telnet"})
+	if !strings.Contains(string(res.Body), "Telnet") {
+		t.Errorf("telnet hint missing: %q", res.Body)
+	}
+
+	// kv helpers
+	run(`sp.set("name", "jeff")`, Request{})
+	res, _ = run(`write(sp.get("name", "?") .. " " .. sp.get("missing", "default"))`, Request{})
+	if string(res.Body) != "jeff default" {
+		t.Errorf("sp.get: %q", res.Body)
+	}
+	res, _ = run(`sp.inc("hits") sp.inc("hits", 5) write(sp.num("hits"))`, Request{})
+	if string(res.Body) != "6" {
+		t.Errorf("sp.inc/num: %q", res.Body)
+	}
+	res, _ = run(`sp.push("log","a") sp.push("log","b") local l=sp.list("log") write(#l..":"..l[1]..l[2]..":"..tostring(sp.has(l,"b")))`, Request{})
+	if string(res.Body) != "2:ab:true" {
+		t.Errorf("sp.list/push/has: %q", res.Body)
+	}
+}
