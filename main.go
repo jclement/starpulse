@@ -59,6 +59,7 @@ func main() {
 	hostname := fs.String("hostname", "", "hostname (install)")
 	purge := fs.Bool("purge", false, "uninstall: also remove config and data")
 	yes := fs.Bool("yes", false, "uninstall: no prompts, keep data")
+	links := fs.Bool("links", false, "doctor: check internal links instead")
 	fs.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 
 	var rest []string
@@ -103,7 +104,7 @@ func main() {
 	case "doctor":
 		cfg, err := config.Load(*cfgPath)
 		run(err)
-		if len(rest) > 0 && (rest[0] == "--links" || rest[0] == "links") {
+		if *links || (len(rest) > 0 && rest[0] == "links") {
 			run(cli.DoctorLinks(cfg))
 		} else {
 			run(cli.Doctor(cfg))

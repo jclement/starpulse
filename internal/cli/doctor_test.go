@@ -17,7 +17,8 @@ func TestDoctorLinksFindsDeadInternalLinks(t *testing.T) {
 	}
 	_, _ = st.SavePage("/index.gmi", []byte(
 		"# Home\n\n=> /about a real page\n=> /gone a dead one\n"+
-			"=> https://example.org external, ignored\n=> /posts/ a folder\n"), "", "t")
+			"=> https://example.org external, ignored\n=> /posts/ a folder\n"+
+			"=> /search the search endpoint\n=> /posts/feed.xml a feed\n"), "", "t")
 	_, _ = st.SavePage("/about.gmi", []byte("# About\n\n=> ./sibling relative dead\n"), "", "t")
 	_, _ = st.SavePage("/posts/index.gmi", []byte("# Posts"), "", "t")
 	st.Close()

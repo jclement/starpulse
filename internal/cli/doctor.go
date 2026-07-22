@@ -244,6 +244,12 @@ func DoctorLinks(cfg *config.Config) error {
 			if !strings.HasPrefix(target, "/") {
 				target = path.Join(path.Dir(from), target) // relative to the page
 			}
+			// endpoints served outside the page resolver: search, and the
+			// per-folder Atom feeds. site.Resolve does not know them, so
+			// they would read as dead when they are not.
+			if target == "/search" || target == "/search/" || strings.HasSuffix(target, "/feed.xml") || target == "/feed.xml" {
+				continue
+			}
 			checked++
 			if sy.Resolve(target, "").Type == site.NotFound {
 				dead++
