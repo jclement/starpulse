@@ -66,7 +66,7 @@ func (s *Server) adminManual(w http.ResponseWriter, r *http.Request) {
 <p>Only this editor writes drafts. Titan, the API, MCP and the terminal editors publish directly — there is no way to express "unpublished" over those, so they say what they mean. Backups carry drafts under <code>drafts/</code>, and restoring puts them back as drafts.</p>
 
 <h2>Executable pages</h2>
-<p>A page whose name ends <code>.cgi</code> is a program. <code>/game.gmi.cgi</code> is served at <code>/game</code>, its output rendered as gemtext (a <code>.txt.cgi</code> serves plain text); the raw source is never served. They are templates, like PHP: text is emitted as-is, code lives in <code>&lt;? … ?&gt;</code>, and <code>&lt;?= expr ?&gt;</code> writes a value. A page that is all program simply opens with <code>&lt;?</code> and never closes.</p>
+<p>A page whose name ends <code>.cgi</code> is a program. <code>/game.cgi</code> is served at <code>/game</code>, its output rendered as gemtext (name it <code>.txt.cgi</code> for plain text instead); the raw source is never served. They are templates, like PHP: text is emitted as-is, code lives in <code>&lt;? … ?&gt;</code>, and <code>&lt;?= expr ?&gt;</code> writes a value. A page that is all program simply opens with <code>&lt;?</code> and never closes.</p>
 <pre># Hello
 Hi <?= sp.identity() ?>, it is <?= request.now ?>.
 &lt;? for _, e in ipairs(sp.list("guests")) do ?&gt;

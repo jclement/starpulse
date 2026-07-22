@@ -708,3 +708,45 @@ pre.diff .hunk { display: block; color: var(--dim); font-style: italic; }
 /* <? ?> tags in a .cgi template */
 .cgi-tag { color: #b3402a; font-weight: 600; }
 @media (prefers-color-scheme: dark) { .cgi-tag { color: #e08a6a; } }
+
+/* the input an executable page asks for: a callout, not a bare field */
+form.script-input {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.7em 0.8em;
+  margin: 1.6em 0;
+  padding: 1.1em 1.3em;
+  background: color-mix(in srgb, var(--accent) 7%, var(--pre-bg));
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+}
+form.script-input label {
+  flex-basis: 100%;
+  margin: 0;
+  font-weight: 600;
+  color: var(--fg);
+}
+form.script-input input {
+  flex: 1;
+  min-width: 11em;
+  font: inherit;
+  padding: 0.55em 0.8em;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+form.script-input input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+form.script-input button {
+  font: inherit;
+  font-weight: 600;
+  padding: 0.55em 1.3em;
+  color: var(--bg);
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+form.script-input button:hover { filter: brightness(1.06); }
