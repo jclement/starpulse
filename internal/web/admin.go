@@ -68,6 +68,7 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 
 func (s *Server) adminRender(w http.ResponseWriter, r *http.Request, title, body string) {
 	noStore(w)
+	body = s.updateBanner() + body
 	body += `<script src="/_/admin.js?v=` + site.BuildVersion + `" defer></script>`
 	s.render(w, r, http.StatusOK, title+" · admin · "+s.Cfg.Hostname, "admin", "", "", body)
 }

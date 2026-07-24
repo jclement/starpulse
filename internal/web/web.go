@@ -83,12 +83,14 @@ type Server struct {
 	// Onion returns the hidden-service hostname ("" when tor is off).
 	Onion func() string
 
-	throttle     *auth.Throttle
-	throttleOnce sync.Once
+	throttle       *auth.Throttle
+	throttleOnce   sync.Once
 	oauthCodes     *codeStore
 	oauthCodesOnce sync.Once
 	hl             *highlight.Highlighter
 	hlOnce         sync.Once
+	updChk         *updateChecker
+	updOnce        sync.Once
 }
 
 // highlighter builds (once) the syntax highlighter for code blocks.
