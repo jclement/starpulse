@@ -16,6 +16,12 @@ import (
 )
 
 func startServer(t *testing.T) (*store.Store, string) {
+	return startServerOpt(t, nil)
+}
+
+// startServerOpt starts a telnet server, letting a test tweak the Server (its
+// session bounds, the onEnd hook) before it begins serving.
+func startServerOpt(t *testing.T, cfgFn func(*Server)) (*store.Store, string) {
 	t.Helper()
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -30,6 +36,9 @@ func startServer(t *testing.T) (*store.Store, string) {
 	cfg.Telnet = config.Service{Enabled: true, Addr: "127.0.0.1:0"}
 
 	srv := &Server{Cfg: cfg, Store: st, Site: site.New(st), Log: log.New(io.Discard)}
+	if cfgFn != nil {
+		cfgFn(srv)
+	}
 	ln, err := srv.Listen()
 	if err != nil {
 		t.Fatal(err)
@@ -133,6 +142,100 @@ func (c *client) send(s string) {
 	c.t.Helper()
 	if _, err := c.conn.Write([]byte(s)); err != nil {
 		c.t.Fatal(err)
+	}
+}
+
+// negotiate sends a NAWS window size, which also drives the first render.
+func (c *client) negotiate(w, h int) {
+	c.send(string([]byte{cmdIAC, cmdWILL, optNAWS}))
+	c.send(string([]byte{cmdIAC, cmdSB, optNAWS, byte(w >> 8), byte(w), byte(h >> 8), byte(h), cmdIAC, cmdSE}))
+}
+
+// drain reads whatever the server sends until it closes or a brief window
+// elapses, tolerating EOF (used when the server writes then hangs up).
+func (c *client) drain(d time.Duration) string {
+	_ = c.conn.SetReadDeadline(time.Now().Add(d))
+	buf := make([]byte, 4096)
+	var sb strings.Builder
+	for {
+		n, err := c.conn.Read(buf)
+		if n > 0 {
+			sb.Write(buf[:n])
+		}
+		if err != nil {
+			break
+		}
+	}
+	return ansiRe.ReplaceAllString(stripIAC(sb.String()), "")
+}
+
+// TestClosedInputEndsSession is the regression test for the leak: when a
+// client's input goes away, the session must tear down (not sit resident).
+func TestClosedInputEndsSession(t *testing.T) {
+	ended := make(chan struct{}, 1)
+	_, addr := startServerOpt(t, func(s *Server) {
+		s.onEnd = func() { ended <- struct{}{} }
+	})
+	c := connect(t, addr)
+	c.negotiate(100, 30)
+	c.expect("Telnet Home") // the session is live
+	c.conn.Close()          // input dies — a scanner hanging up
+	select {
+	case <-ended:
+	case <-time.After(5 * time.Second):
+		t.Fatal("session did not end after input closed — it leaked")
+	}
+}
+
+// TestIdleTimeoutEndsSession: a connection that sends nothing is dropped.
+func TestIdleTimeoutEndsSession(t *testing.T) {
+	ended := make(chan struct{}, 1)
+	_, addr := startServerOpt(t, func(s *Server) {
+		s.idleTimeout = 200 * time.Millisecond
+		s.sessionLimit = time.Hour // isolate: only the idle timer can fire
+		s.onEnd = func() { ended <- struct{}{} }
+	})
+	c := connect(t, addr)
+	c.negotiate(100, 30)
+	c.expect("Telnet Home")
+	// now go silent; the idle timeout should reap the session
+	select {
+	case <-ended:
+	case <-time.After(5 * time.Second):
+		t.Fatal("idle session was not dropped")
+	}
+}
+
+// TestHardLimitEndsSession: a session is killed at sessionLimit even if it is
+// not idle-eligible (idle set far out, so only the hard timer can fire).
+func TestHardLimitEndsSession(t *testing.T) {
+	ended := make(chan struct{}, 1)
+	_, addr := startServerOpt(t, func(s *Server) {
+		s.sessionLimit = 200 * time.Millisecond
+		s.idleTimeout = time.Hour
+		s.onEnd = func() { ended <- struct{}{} }
+	})
+	c := connect(t, addr)
+	c.negotiate(100, 30)
+	c.expect("Telnet Home")
+	select {
+	case <-ended:
+	case <-time.After(5 * time.Second):
+		t.Fatal("hard session limit did not fire")
+	}
+}
+
+// TestConcurrencyCap: beyond maxSessions, new connections are refused with a
+// busy notice rather than piling on.
+func TestConcurrencyCap(t *testing.T) {
+	_, addr := startServerOpt(t, func(s *Server) { s.maxSessions = 1 })
+	c1 := connect(t, addr)
+	c1.negotiate(100, 30)
+	c1.expect("Telnet Home") // holds the only slot
+
+	c2 := connect(t, addr)
+	if msg := c2.drain(3 * time.Second); !strings.Contains(msg, "busy") {
+		t.Fatalf("second connection was not refused; got %q", msg)
 	}
 }
 
